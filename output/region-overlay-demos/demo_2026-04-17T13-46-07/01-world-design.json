@@ -1,0 +1,427 @@
+{
+  "worldName": "青禾小镇",
+  "worldDescription": "这是一个坐落在山脚下的清新乡下小镇，居民大多是世代居住在此的朴实农户，生活节奏缓慢悠闲。镇里的中央广场是大家日常聊天聚会的好去处，周边的菜地、杂货店、小诊所足以满足所有人的日常生活需求。",
+  "mapDescription": "Top-down 16:9 compact rural town map, fresh soft hand-painted watercolor art style. Pastel color palette dominated by soft green, light yellow, sky blue and warm beige. Central square with stone paving, old oak tree and wooden benches sits in the exact center. The vegetable plot with green leafy crops, wooden fences and small water buckets is placed on the west side of the square. The small single-story white-walled clinic with a red cross sign is on the north side of the square. The cozy wooden grocery store with a gabled roof and hanging sign is on the east side of the square. Small gravel paths connect all four areas, no extra unnecessary buildings, clean uncluttered layout suitable for single screen display.",
+  "sceneType": "closed",
+  "timeConfig": {
+    "startTime": "07:30",
+    "tickDurationMinutes": 15,
+    "maxTicks": null,
+    "displayFormat": "modern"
+  },
+  "multiDay": {
+    "enabled": true,
+    "dayTransitionText": "太阳落山了，小镇居民纷纷回家休息，新的一天即将开始。",
+    "nextDayStartTime": "07:30"
+  },
+  "mapPlan": {
+    "buildingMode": "mostly_enterable",
+    "compositionNotes": "以中央广场为核心布局，四个功能区围绕广场分布，整体视觉简洁清新，突出田园悠闲气息。",
+    "worldFunctionSummary": "支持居民日常劳作、采购、就医、社交聚会等活动，完整还原慢节奏的乡下生活场景。",
+    "regionDesignNotes": "各个区域之间用碎石小路连通，边界清晰但不生硬，过渡自然符合小镇真实生活逻辑。"
+  },
+  "worldActions": [
+    {
+      "id": "stroll_around_town",
+      "name": "闲逛小镇",
+      "description": "沿着小镇的碎石路慢慢走，欣赏田间风光和小镇街景，路过的邻居会主动打招呼。",
+      "availableWhenState": [
+        "available"
+      ],
+      "duration": 3,
+      "effects": [
+        {
+          "type": "character_need",
+          "target": "curiosity",
+          "value": 10
+        },
+        {
+          "type": "character_need",
+          "target": "mood",
+          "value": 8
+        }
+      ],
+      "repeatable": true
+    },
+    {
+      "id": "greet_passersby",
+      "name": "问候路人",
+      "description": "向遇到的小镇居民打招呼闲聊，分享最近的生活小事，拉近彼此的关系。",
+      "availableWhenState": [
+        "available"
+      ],
+      "duration": 2,
+      "effects": [
+        {
+          "type": "character_need",
+          "target": "social",
+          "value": 15
+        },
+        {
+          "type": "character_need",
+          "target": "mood",
+          "value": 5
+        }
+      ],
+      "repeatable": true
+    }
+  ],
+  "regions": [
+    {
+      "id": "central_plaza",
+      "name": "中央广场",
+      "description": "小镇的核心公共区域，铺着石板路，中间长着一棵老橡树，周围摆着木长椅，是居民日常聚会、乘凉、举办小型活动的地方。",
+      "type": "outdoor",
+      "enterable": true,
+      "shapeConstraint": "flexible",
+      "placementHint": "center",
+      "visualDescription": "Paved with gray cobblestones, large old oak tree in middle, several weathered wooden benches around, small wild flower beds at edges.",
+      "expectedObjects": [
+        "oak tree",
+        "wooden bench",
+        "stone paving",
+        "flower bed"
+      ],
+      "interactions": [
+        {
+          "id": "sit_rest",
+          "name": "坐下休息",
+          "description": "坐在广场的长椅上晒太阳、吹凉风，放松紧绷的身心。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 4,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "fatigue",
+              "value": -15
+            },
+            {
+              "type": "character_need",
+              "target": "mood",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "vegetable_plot",
+      "name": "公共菜地",
+      "description": "小镇居民共同打理的公共菜地，种着各类应季的绿叶蔬菜、瓜果，边上搭着矮竹篱笆，是居民日常劳作的主要场所。",
+      "type": "outdoor",
+      "enterable": true,
+      "shapeConstraint": "flexible",
+      "placementHint": "west side",
+      "visualDescription": "Neat rows of green leafy vegetables and red tomato vines, low wooden fence surrounding, small tin watering cans and bamboo hoes leaning against fence.",
+      "expectedObjects": [
+        "vegetable rows",
+        "wooden fence",
+        "watering can",
+        "hoe"
+      ],
+      "interactions": [
+        {
+          "id": "tend_crops",
+          "name": "照料作物",
+          "description": "给菜地的蔬菜浇水、除草、施肥，体验农耕劳作的乐趣。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 6,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "fatigue",
+              "value": 10
+            },
+            {
+              "type": "character_need",
+              "target": "sense_of_achievement",
+              "value": 20
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "general_store",
+      "name": "便民杂货店",
+      "description": "镇上唯一的杂货店，售卖各类日用品、零食、农具和粮油副食，老板是热心的李阿婆，经常给小孩免费塞糖吃。",
+      "type": "building",
+      "enterable": true,
+      "shapeConstraint": "rectangular",
+      "placementHint": "east side",
+      "visualDescription": "Single-story warm wooden building, gabled roof with terracotta tiles, hanging hand-painted wooden sign at entrance, glass window displaying assorted goods.",
+      "expectedObjects": [
+        "wooden shelves",
+        "service counter",
+        "candy jar",
+        "rice sack"
+      ],
+      "interactions": [
+        {
+          "id": "buy_goods",
+          "name": "购买商品",
+          "description": "在杂货店里挑选需要的日用品、零食或者农具，和老板唠唠家常。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 3,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "convenience",
+              "value": 20
+            },
+            {
+              "type": "character_need",
+              "target": "mood",
+              "value": 8
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "village_clinic",
+      "name": "乡村小诊所",
+      "description": "镇上的小型诊所，只有林医生一位坐诊，可以看普通小病、拿常用药、处理外伤，是全镇居民健康的保障。",
+      "type": "building",
+      "enterable": true,
+      "shapeConstraint": "rectangular",
+      "placementHint": "north side",
+      "visualDescription": "Single-story white plastered building, small red cross sign above door, potted green succulents on windowsill, simple wooden steps at entrance.",
+      "expectedObjects": [
+        "examination table",
+        "medicine cabinet",
+        "thermometer",
+        "bandage roll"
+      ],
+      "interactions": [
+        {
+          "id": "seek_medical_help",
+          "name": "就诊取药",
+          "description": "找诊所的林医生看诊，咨询健康问题，购买需要的常用药品。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 5,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "health",
+              "value": 30
+            },
+            {
+              "type": "character_need",
+              "target": "peace_of_mind",
+              "value": 15
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "name": "李阿婆",
+      "role": "杂货店老板",
+      "personality": "热情爽朗，爱唠嗑，记性极好，记得镇上所有人的喜好，心肠软，经常给来店里的小孩免费塞糖，遇到经济困难的邻居会主动免单。",
+      "appearance": "Short plump old woman in her 60s, round wrinkled face with permanent kind smile, short gray hair tied in a bun with a faded blue cotton hairband, wears loose dark blue cotton jacket and black apron with small white floral patterns, always has a bunch of rusty iron keys hanging on her waist.",
+      "motivation": "打理好杂货店，给全镇居民提供便利的生活物资，多和来买东西的邻居聊天了解大家的近况，把日子过得热热闹闹的。",
+      "socialStyle": "Extrovert, likes to take the initiative to talk to everyone, treats all residents like family members.",
+      "initialMemories": [
+        "昨天王大爷来买了治风湿的药膏，今天要记得给他留新到的艾草包",
+        "上周张奶奶家的小孙子来店里偷拿了一颗糖，自己假装没看见还给了他另一颗",
+        "菜农小陈昨天送了自己一大捆刚摘的青菜，特别新鲜"
+      ]
+    },
+    {
+      "name": "陈叔",
+      "role": "菜地管理员",
+      "personality": "憨厚老实，话不多，做事勤快细致，把公共菜地看得比什么都重要，不喜欢有人随意踩踏菜地的作物，但对调皮的小孩格外宽容。",
+      "appearance": "Tall thin middle-aged man in his 40s, tanned dark brown skin, short messy black hair with a few gray strands, wears faded light green canvas work clothes, dirty black rubber boots, always has a woven bamboo hat hanging on his back, hands are rough with thick calluses from years of farming.",
+      "motivation": "照料好全镇的公共菜地，种出健康好吃的蔬菜瓜果，保障全镇人的新鲜食材供给，让大家都能吃上放心菜。",
+      "socialStyle": "Introvert, not good at initiating conversations, will only scratch his head and smile sheepishly when others talk to him.",
+      "initialMemories": [
+        "最近天气干燥，菜地的白菜需要每天多浇一次水才能长得好",
+        "上周李阿婆给自己送了一罐自制的腌萝卜，味道特别好",
+        "去年广场的老橡树掉了很多叶子进菜地，自己扫了整整一下午才清理干净"
+      ]
+    },
+    {
+      "name": "林晓",
+      "role": "诊所医生",
+      "personality": "温和耐心，做事仔细严谨，话不多但非常靠谱，是全镇人都信任的医生，闲暇的时候喜欢坐在诊所门口看书，偶尔会去广场散步。",
+      "appearance": "Gentle young woman in her late 20s, fair smooth skin, long straight black hair tied in a low ponytail, wears clean white doctor's coat over a light blue knit sweater, round black-framed glasses, small silver necklace with a four-leaf clover pendant, spotless white leather shoes.",
+      "motivation": "照顾好全镇居民的健康，给大家普及基础的健康知识，远离快节奏的城市生活，在小镇安安稳稳地过日子。",
+      "socialStyle": "Ambivert, speaks softly and gently, is extremely patient with patients, usually prefers to stay quiet when there is nothing to do.",
+      "initialMemories": [
+        "上周张大爷的高血压药快吃完了，要记得提醒他过来拿新的",
+        "昨天小陈在菜地干活划伤了手，自己给他包扎的时候他还不好意思得红了脸",
+        "自己三年前从城里来到这个小镇，再也不想回到拥挤忙碌的城市生活"
+      ]
+    },
+    {
+      "name": "王小丫",
+      "role": "小学二年级学生",
+      "personality": "活泼好动，好奇心极强，每天放学写完作业就跑到镇上玩，喜欢偷偷去菜地摘小番茄吃，经常到李阿婆的店里蹭糖吃，是全镇的开心果。",
+      "appearance": "Cute little girl around 8 years old, round rosy cheeks, two high braids tied with bright red silk ribbons, wears pink puffer jacket with cartoon rabbit prints, loose washed blue jeans, dirty white sneakers, almost always holds a half-eaten lollipop in her hand.",
+      "motivation": "每天写完作业就出来找小伙伴玩，吃好吃的零食，探索小镇的每一个角落，等爸爸妈妈从城里回来给自己带新礼物。",
+      "socialStyle": "Extrovert, not afraid of strangers, likes to pester adults to ask all kinds of weird questions.",
+      "initialMemories": [
+        "昨天在菜地里摘了三颗小番茄，酸酸甜甜很好吃，陈叔看见了也没骂自己",
+        "李阿婆昨天给自己塞了一颗橘子味的糖，是自己最喜欢的口味",
+        "下周爸爸妈妈要从城里回来给自己带新的洋娃娃"
+      ]
+    }
+  ],
+  "locations": [
+    {
+      "id": "central_plaza",
+      "name": "中央广场",
+      "description": "小镇的核心公共区域，铺着石板路，中间长着一棵老橡树，周围摆着木长椅，是居民日常聚会、乘凉、举办小型活动的地方。",
+      "expectedObjects": [
+        "oak tree",
+        "wooden bench",
+        "stone paving",
+        "flower bed"
+      ],
+      "interactions": [
+        {
+          "id": "sit_rest",
+          "name": "坐下休息",
+          "description": "坐在广场的长椅上晒太阳、吹凉风，放松紧绷的身心。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 4,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "fatigue",
+              "value": -15
+            },
+            {
+              "type": "character_need",
+              "target": "mood",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "vegetable_plot",
+      "name": "公共菜地",
+      "description": "小镇居民共同打理的公共菜地，种着各类应季的绿叶蔬菜、瓜果，边上搭着矮竹篱笆，是居民日常劳作的主要场所。",
+      "expectedObjects": [
+        "vegetable rows",
+        "wooden fence",
+        "watering can",
+        "hoe"
+      ],
+      "interactions": [
+        {
+          "id": "tend_crops",
+          "name": "照料作物",
+          "description": "给菜地的蔬菜浇水、除草、施肥，体验农耕劳作的乐趣。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 6,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "fatigue",
+              "value": 10
+            },
+            {
+              "type": "character_need",
+              "target": "sense_of_achievement",
+              "value": 20
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "general_store",
+      "name": "便民杂货店",
+      "description": "镇上唯一的杂货店，售卖各类日用品、零食、农具和粮油副食，老板是热心的李阿婆，经常给小孩免费塞糖吃。",
+      "expectedObjects": [
+        "wooden shelves",
+        "service counter",
+        "candy jar",
+        "rice sack"
+      ],
+      "interactions": [
+        {
+          "id": "buy_goods",
+          "name": "购买商品",
+          "description": "在杂货店里挑选需要的日用品、零食或者农具，和老板唠唠家常。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 3,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "convenience",
+              "value": 20
+            },
+            {
+              "type": "character_need",
+              "target": "mood",
+              "value": 8
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "village_clinic",
+      "name": "乡村小诊所",
+      "description": "镇上的小型诊所，只有林医生一位坐诊，可以看普通小病、拿常用药、处理外伤，是全镇居民健康的保障。",
+      "expectedObjects": [
+        "examination table",
+        "medicine cabinet",
+        "thermometer",
+        "bandage roll"
+      ],
+      "interactions": [
+        {
+          "id": "seek_medical_help",
+          "name": "就诊取药",
+          "description": "找诊所的林医生看诊，咨询健康问题，购买需要的常用药品。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 5,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "health",
+              "value": 30
+            },
+            {
+              "type": "character_need",
+              "target": "peace_of_mind",
+              "value": 15
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "batchIndex": 1,
+    "regionIds": [
+      "central_plaza",
+      "vegetable_plot",
+      "general_store",
+      "village_clinic"
+    ]
+  }
+]

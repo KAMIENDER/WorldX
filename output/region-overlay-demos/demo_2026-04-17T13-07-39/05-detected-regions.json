@@ -1,0 +1,41 @@
+[
+  {
+    "id": "community_vegetable_patch",
+    "name": "公共菜地",
+    "type": "outdoor",
+    "topLeft": {
+      "x": 991,
+      "y": 207
+    },
+    "bottomRight": {
+      "x": 1277,
+      "y": 585
+    }
+  },
+  {
+    "id": "general_store",
+    "name": "小镇杂货店",
+    "type": "building",
+    "topLeft": {
+      "x": 135,
+      "y": 147
+    },
+    "bottomRight": {
+      "x": 405,
+      "y": 565
+    }
+  },
+  {
+    "id": "central_plaza",
+    "name": "中央广场",
+    "type": "outdoor",
+    "topLeft": {
+      "x": 559,
+      "y": 195
+    },
+    "bottomRight": {
+      "x": 885,
+      "y": 585
+    }
+  }
+]

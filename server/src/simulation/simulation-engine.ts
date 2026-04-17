@@ -1,0 +1,1070 @@
+import type {
+  ActionDecision,
+  DialogueEventData,
+  DialogueResult,
+  DialogueSession,
+  DialogueTurn,
+  Perception,
+  SimulationEvent,
+  GameTime,
+} from "../types/index.js";
+import type { WorldManager } from "../core/world-manager.js";
+import type { CharacterManager } from "../core/character-manager.js";
+import type { LLMClient } from "../llm/llm-client.js";
+import type { PromptBuilder } from "../llm/prompt-builder.js";
+import { DecisionMaker } from "./decision-maker.js";
+import { DialogueGenerator } from "./dialogue-generator.js";
+import { buildPerception } from "./perceiver.js";
+import { buildActionMenu } from "./action-menu-builder.js";
+import { executeAction, completeAction } from "./action-executor.js";
+import {
+  DiarySchema,
+  MemoryEvalSchema,
+  MicroReflectionSchema,
+  ReflectionSchema,
+} from "../llm/output-schemas.js";
+import * as memoryStore from "../store/memory-store.js";
+import {
+  absoluteTick,
+  getBatchTicksForOneCycle,
+  tickToSceneTimeWithPeriod,
+} from "../utils/time-helpers.js";
+import { generateId } from "../utils/id-generator.js";
+import * as eventStore from "../store/event-store.js";
+import { calculateDramScore, flagHighDramaEvents } from "../content/drama-scorer.js";
+import { extractQuotes } from "../content/quote-extractor.js";
+import { generateDailySummary } from "../content/summary-generator.js";
+import { generateGraphSnapshot } from "../content/relationship-graph.js";
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const MAX_DIALOGUE_TURNS_PER_TICK = 1;
+const MAX_DIALOGUE_TURNS_PER_SESSION = 6;
+
+type TickIntent = {
+  decision: ActionDecision;
+};
+
+export class SimulationEngine {
+  private decisionMaker: DecisionMaker;
+  private dialogueGenerator: DialogueGenerator;
+  private memoryEvalQueue: Promise<void> = Promise.resolve();
+
+  constructor(
+    private worldManager: WorldManager,
+    private characterManager: CharacterManager,
+    private llmClient: LLMClient,
+    private promptBuilder: PromptBuilder,
+  ) {
+    this.decisionMaker = new DecisionMaker(
+      llmClient,
+      promptBuilder,
+      characterManager,
+      worldManager,
+    );
+    this.dialogueGenerator = new DialogueGenerator(
+      llmClient,
+      promptBuilder,
+      characterManager,
+      worldManager,
+    );
+  }
+
+  async simulateTick(): Promise<SimulationEvent[]> {
+    const events: SimulationEvent[] = [];
+    const tickAdvance = this.worldManager.advanceTick();
+    const { previousTime, currentTime: gameTime, didAdvanceDay } = tickAdvance;
+    const absNow = absoluteTick(gameTime);
+
+    if (didAdvanceDay) {
+      events.push(...await this.runCycleTransition(previousTime));
+      return this.finalizeTickEvents(events);
+    }
+
+    const allChars = shuffle(this.characterManager.getAllProfiles());
+
+    for (const char of allChars) {
+      events.push(
+        ...this.characterManager.tickPassiveUpdate(char.id, gameTime),
+      );
+    }
+
+    const activeSessions = this.reconcileDialogueSessions();
+    const decisionEligible: string[] = [];
+
+    for (const char of allChars) {
+      try {
+        const shouldDecide = this.prepareCharacterForTick(
+          char.id,
+          gameTime,
+          absNow,
+          events,
+        );
+        if (shouldDecide) {
+          decisionEligible.push(char.id);
+        }
+      } catch (err) {
+        console.error(`[SimEngine] Error preparing ${char.id}:`, err);
+      }
+    }
+
+    const intents = await this.buildTickIntents(decisionEligible, gameTime, events);
+    const dialogueIntentByInitiator = new Map<string, ActionDecision>();
+
+    for (const charId of decisionEligible) {
+      const intent = intents.get(charId);
+      if (intent?.decision.actionType === "talk_to") {
+        dialogueIntentByInitiator.set(charId, intent.decision);
+      }
+    }
+
+    const selectedSessions = this.selectDialogueSessions({
+      allChars,
+      gameTime,
+      activeSessions,
+      dialogueIntentByInitiator,
+      absNow,
+    });
+    const charsReservedForDialogue = new Set(
+      selectedSessions.flatMap((session) => session.participants),
+    );
+
+    for (const charId of decisionEligible) {
+      if (charsReservedForDialogue.has(charId)) continue;
+
+      const intent = intents.get(charId);
+      if (!intent || intent.decision.actionType === "talk_to") continue;
+
+      events.push(
+        ...executeAction(
+          intent.decision,
+          charId,
+          this.worldManager,
+          this.characterManager,
+          gameTime,
+        ),
+      );
+    }
+
+    const sessionResults = await Promise.allSettled(
+      selectedSessions.map((session) =>
+        this.runDialogueSession(session, gameTime, absNow),
+      ),
+    );
+
+    for (const result of sessionResults) {
+      if (result.status === "fulfilled") {
+        events.push(...result.value);
+      } else {
+        console.error("[SimEngine] Dialogue session error:", result.reason);
+      }
+    }
+
+    if (this.shouldRunMicroReflectionWave(gameTime)) {
+      events.push(...await this.runMicroReflectionWave(gameTime));
+    }
+
+    this.scheduleRecentMemoryEvaluation(gameTime);
+    return this.finalizeTickEvents(events);
+  }
+
+  async simulateDay(): Promise<SimulationEvent[]> {
+    const allEvents: SimulationEvent[] = [];
+    const currentTime = this.worldManager.getCurrentTime();
+    const sceneConfig = this.worldManager.getSceneConfig();
+    const maxTicks = getBatchTicksForOneCycle({
+      sceneType: sceneConfig.sceneType,
+      startTime: sceneConfig.startTime,
+      tickDurationMinutes: sceneConfig.tickDurationMinutes,
+      maxTicks: sceneConfig.maxTicks,
+      sceneDay: currentTime.day,
+      displayFormat: sceneConfig.displayFormat,
+      multiDay: sceneConfig.multiDay,
+    });
+    for (let i = 0; i < maxTicks; i++) {
+      const events = await this.simulateTick();
+      allEvents.push(...events);
+      const gt = this.worldManager.getCurrentTime();
+      process.stdout.write(
+        `\r  Day ${gt.day} Tick ${gt.tick}/${maxTicks - 1} (events: ${allEvents.length})`,
+      );
+    }
+    console.log();
+    return allEvents;
+  }
+
+  async simulateDays(count: number): Promise<void> {
+    for (let d = 0; d < count; d++) {
+      const gt = this.worldManager.getCurrentTime();
+      console.log(`\n--- Simulating Day ${gt.day} ---`);
+      await this.simulateDay();
+    }
+  }
+
+  private finalizeTickEvents(events: SimulationEvent[]): SimulationEvent[] {
+    for (const event of events) {
+      event.dramScore = calculateDramScore(event, this.characterManager);
+    }
+    flagHighDramaEvents(events);
+    for (const event of events.filter((e) => e.type === "dialogue")) {
+      extractQuotes(event, this.characterManager);
+    }
+    if (events.length > 0) {
+      eventStore.appendEvents(events);
+    }
+    return events;
+  }
+
+  private async runCycleTransition(
+    cycleEndTime: GameTime,
+  ): Promise<SimulationEvent[]> {
+    const events: SimulationEvent[] = [];
+
+    const reflectionEvents = await this.runReflection(cycleEndTime);
+    events.push(...reflectionEvents);
+
+    this.runEndOfDayDecay(cycleEndTime);
+    try {
+      await generateDailySummary(cycleEndTime.day, this.llmClient);
+    } catch (err) {
+      console.error("[SimEngine] Daily summary error:", err);
+    }
+
+    try {
+      const graphData = generateGraphSnapshot(this.characterManager);
+      graphData.generatedAt = cycleEndTime;
+      events.push({
+        id: generateId(),
+        gameDay: cycleEndTime.day,
+        gameTick: cycleEndTime.tick,
+        type: "world_state_change",
+        location: "global",
+        data: { subtype: "relationship_graph", graph: graphData },
+        tags: ["relationship_graph", "daily"],
+      });
+    } catch (err) {
+      console.error("[SimEngine] Relationship graph error:", err);
+    }
+
+    this.worldManager.createSnapshot(`Day ${cycleEndTime.day} ended`);
+    return events;
+  }
+
+  private shouldRunMicroReflectionWave(gameTime: GameTime): boolean {
+    const ticksPerHour = Math.max(
+      1,
+      Math.round(60 / this.worldManager.getSceneConfig().tickDurationMinutes),
+    );
+    return gameTime.tick > 0 && gameTime.tick % ticksPerHour === 0;
+  }
+
+  private async runMicroReflectionWave(
+    gameTime: GameTime,
+  ): Promise<SimulationEvent[]> {
+    const events: SimulationEvent[] = [];
+    const ticksPerHour = Math.max(
+      1,
+      Math.round(60 / this.worldManager.getSceneConfig().tickDurationMinutes),
+    );
+
+    for (const profile of this.characterManager.getAllProfiles()) {
+      try {
+        const recentMemories = this.characterManager.memoryManager
+          .getMemoriesByDay(profile.id, gameTime.day)
+          .filter((memory) => {
+            if (memory.type === "reflection") return false;
+            const age = absoluteTick(gameTime) - absoluteTick({
+              day: memory.gameDay,
+              tick: memory.gameTick,
+            });
+            return age >= 0 && age <= ticksPerHour;
+          });
+
+        if (recentMemories.length < 2) continue;
+
+        const messages = this.promptBuilder.buildMicroReflectionMessages({
+          profile,
+          gameDay: gameTime.day,
+          timeString: tickToSceneTimeWithPeriod(
+            gameTime.tick,
+            {
+              sceneType: this.worldManager.getSceneConfig().sceneType,
+              startTime: this.worldManager.getSceneConfig().startTime,
+              tickDurationMinutes: this.worldManager.getSceneConfig().tickDurationMinutes,
+              maxTicks: this.worldManager.getSceneConfig().maxTicks,
+              sceneDay: gameTime.day,
+              displayFormat: this.worldManager.getSceneConfig().displayFormat,
+              multiDay: this.worldManager.getSceneConfig().multiDay,
+            },
+          ),
+          currentFocus:
+            this.worldManager.getGlobal(`current_focus:${profile.id}`) ?? undefined,
+          recentMemories: recentMemories.map((m) => `- ${m.content}`).join("\n"),
+        });
+
+        const result = await this.llmClient.call({
+          messages,
+          schema: MicroReflectionSchema,
+          options: { taskType: "micro_reflection", characterId: profile.id },
+        });
+
+        this.characterManager.memoryManager.addMemory({
+          characterId: profile.id,
+          type: "reflection",
+          content: result.data.insight,
+          gameTime,
+          importance: 5,
+          emotionalValence: result.data.emotionShift.valence,
+          emotionalIntensity: Math.max(
+            1,
+            Math.abs(result.data.emotionShift.arousal) +
+              Math.abs(result.data.emotionShift.valence),
+          ),
+          tags: ["micro_reflection", ...(result.data.tags || [])],
+        });
+
+        const state = this.characterManager.getState(profile.id);
+        this.characterManager.updateState(profile.id, {
+          emotionValence: Math.max(
+            -5,
+            Math.min(5, state.emotionValence + result.data.emotionShift.valence),
+          ),
+          emotionArousal: Math.max(
+            0,
+            Math.min(10, state.emotionArousal + result.data.emotionShift.arousal),
+          ),
+        });
+
+        if (result.data.currentFocus) {
+          this.worldManager.setGlobal(
+            `current_focus:${profile.id}`,
+            result.data.currentFocus,
+          );
+        }
+
+        events.push({
+          id: generateId(),
+          gameDay: gameTime.day,
+          gameTick: gameTime.tick,
+          type: "reflection",
+          actorId: profile.id,
+          location: this.characterManager.getState(profile.id).location,
+          data: {
+            insights: [result.data.insight],
+            emotionShift: result.data.emotionShift,
+            currentFocus: result.data.currentFocus,
+            scope: "micro",
+          },
+          tags: ["reflection", "micro_reflection", ...(result.data.tags || [])],
+        });
+      } catch (err) {
+        console.error(`[SimEngine] Micro reflection error for ${profile.id}:`, err);
+      }
+    }
+
+    return events;
+  }
+
+  private normalizeDecision(decision: ActionDecision): ActionDecision {
+    let { targetId, interactionId } = decision;
+    if (!targetId) return decision;
+
+    targetId = this.resolveId(targetId);
+    if (interactionId) interactionId = this.resolveId(interactionId);
+
+    return { ...decision, targetId, interactionId };
+  }
+
+  private resolveId(raw: string): string {
+    const trimmed = raw.trim();
+
+    for (const p of this.characterManager.getAllProfiles()) {
+      if (trimmed === p.id) return p.id;
+    }
+    for (const loc of this.worldManager.getAllLocations()) {
+      if (trimmed === loc.id) return loc.id;
+    }
+    for (const p of this.characterManager.getAllProfiles()) {
+      if (trimmed.includes(p.id)) return p.id;
+    }
+    for (const loc of this.worldManager.getAllLocations()) {
+      if (trimmed.includes(loc.id)) return loc.id;
+    }
+    for (const p of this.characterManager.getAllProfiles()) {
+      if (trimmed.includes(p.name) || trimmed.includes(p.nickname)) return p.id;
+    }
+    for (const loc of this.worldManager.getAllLocations()) {
+      if (trimmed.includes(loc.name)) return loc.id;
+    }
+    for (const loc of this.worldManager.getAllLocations()) {
+      for (const obj of loc.objects) {
+        if (trimmed === obj.id || trimmed.includes(obj.id)) return obj.id;
+        for (const inter of obj.interactions) {
+          if (trimmed === inter.id || trimmed.includes(inter.id)) return inter.id;
+        }
+      }
+    }
+
+    return trimmed;
+  }
+
+  private prepareCharacterForTick(
+    charId: string,
+    gameTime: GameTime,
+    absNow: number,
+    events: SimulationEvent[],
+  ): boolean {
+    let state = this.characterManager.getState(charId);
+
+    if (
+      state.currentAction &&
+      state.currentAction !== "in_conversation" &&
+      absNow >= state.actionEndTick
+    ) {
+      events.push(
+        ...completeAction(
+          charId,
+          this.worldManager,
+          this.characterManager,
+          gameTime,
+        ),
+      );
+      state = this.characterManager.getState(charId);
+    }
+
+    if (state.currentAction) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private async buildTickIntents(
+    charIds: string[],
+    gameTime: GameTime,
+    events: SimulationEvent[],
+  ): Promise<Map<string, TickIntent>> {
+    const results = await Promise.allSettled(
+      charIds.map(async (charId) => {
+        const perception = buildPerception(
+          charId,
+          this.worldManager,
+          this.characterManager,
+          gameTime,
+        );
+
+        this.maybeGenerateObservationMemory(charId, perception, gameTime, events);
+
+        const actionMenu = buildActionMenu(
+          charId,
+          perception,
+          this.worldManager,
+          this.characterManager,
+        );
+        const rawDecision = await this.decisionMaker.makeDecision(
+          charId,
+          perception,
+          actionMenu,
+          gameTime,
+        );
+        const decision = this.normalizeDecision(rawDecision);
+        const intent: TickIntent = { decision };
+        return [charId, intent] as const;
+      }),
+    );
+
+    const intents = new Map<string, TickIntent>();
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        intents.set(result.value[0], result.value[1]);
+      } else {
+        console.error("[SimEngine] Decision wave error:", result.reason);
+      }
+    }
+    return intents;
+  }
+
+  private reconcileDialogueSessions(): DialogueSession[] {
+    const sessions = this.worldManager.listDialogueSessions();
+    const activeCharacterIds = new Set<string>();
+    const activeSessions: DialogueSession[] = [];
+
+    for (const session of sessions) {
+      try {
+        const [charA, charB] = session.participants;
+        this.characterManager.getState(charA);
+        this.characterManager.getState(charB);
+
+        if (session.status !== "active") {
+          this.worldManager.deleteDialogueSession(session.id);
+          continue;
+        }
+
+        activeCharacterIds.add(charA);
+        activeCharacterIds.add(charB);
+        activeSessions.push({ ...session, turnsThisTick: 0 });
+      } catch {
+        this.worldManager.deleteDialogueSession(session.id);
+      }
+    }
+
+    for (const state of this.characterManager.getAllStates()) {
+      if (
+        state.currentAction === "in_conversation" &&
+        !activeCharacterIds.has(state.characterId)
+      ) {
+        this.characterManager.updateState(state.characterId, {
+          currentAction: null,
+          currentActionTarget: null,
+          actionStartTick: 0,
+          actionEndTick: 0,
+        });
+      }
+    }
+
+    return activeSessions;
+  }
+
+  private selectDialogueSessions(params: {
+    allChars: { id: string }[];
+    gameTime: GameTime;
+    activeSessions: DialogueSession[];
+    dialogueIntentByInitiator: Map<string, ActionDecision>;
+    absNow: number;
+  }): DialogueSession[] {
+    const {
+      allChars,
+      gameTime,
+      activeSessions,
+      dialogueIntentByInitiator,
+      absNow,
+    } = params;
+    const selected: DialogueSession[] = [];
+    const reservedChars = new Set<string>();
+
+    for (const session of activeSessions) {
+      const [charA, charB] = session.participants;
+      if (!reservedChars.has(charA) && !reservedChars.has(charB)) {
+        reservedChars.add(charA);
+        reservedChars.add(charB);
+        selected.push({
+          ...session,
+          location: this.characterManager.getState(charA).location,
+          turnsThisTick: 0,
+        });
+      }
+    }
+
+    for (const char of allChars) {
+      const decision = dialogueIntentByInitiator.get(char.id);
+      if (!decision || !decision.targetId) continue;
+      if (reservedChars.has(char.id) || reservedChars.has(decision.targetId)) {
+        continue;
+      }
+      if (!this.canStartDialogue(char.id, decision.targetId)) continue;
+
+      const session = this.createDialogueSession({
+        initiatorId: char.id,
+        responderId: decision.targetId,
+        motivation: decision.reason,
+        gameTime,
+        absNow,
+      });
+      reservedChars.add(char.id);
+      reservedChars.add(decision.targetId);
+      selected.push(session);
+    }
+
+    return selected;
+  }
+
+  private canStartDialogue(charA: string, charB: string): boolean {
+    if (charA === charB) return false;
+    if (this.worldManager.findDialogueSessionByParticipants(charA, charB)) {
+      return false;
+    }
+
+    const stateA = this.characterManager.getState(charA);
+    const stateB = this.characterManager.getState(charB);
+    return (
+      !stateA.currentAction &&
+      !stateB.currentAction &&
+      this.areStatesDialogueCompatible(stateA, stateB)
+    );
+  }
+
+  private isSessionContinuable(session: DialogueSession): boolean {
+    const [charA, charB] = session.participants;
+    const stateA = this.characterManager.getState(charA);
+    const stateB = this.characterManager.getState(charB);
+    return (
+      stateA.currentAction === "in_conversation" &&
+      stateB.currentAction === "in_conversation" &&
+      this.areStatesDialogueCompatible(stateA, stateB)
+    );
+  }
+
+  private areStatesDialogueCompatible(
+    stateA: { location: string; mainAreaPointId?: string | null },
+    stateB: { location: string; mainAreaPointId?: string | null },
+  ): boolean {
+    if (stateA.location !== stateB.location) return false;
+    if (stateA.location !== "main_area") return true;
+    return this.worldManager.areMainAreaPointsConversable(
+      stateA.mainAreaPointId ?? null,
+      stateB.mainAreaPointId ?? null,
+    );
+  }
+
+  private createDialogueSession(params: {
+    initiatorId: string;
+    responderId: string;
+    motivation: string;
+    gameTime: GameTime;
+    absNow: number;
+  }): DialogueSession {
+    const { initiatorId, responderId, motivation, gameTime, absNow } = params;
+    const session: DialogueSession = {
+      id: generateId(),
+      participants: [initiatorId, responderId],
+      location: this.characterManager.getState(initiatorId).location,
+      startedAt: gameTime,
+      lastUpdatedAt: gameTime,
+      status: "active",
+      nextSpeaker: initiatorId,
+      transcript: [],
+      turnsThisTick: 0,
+      totalTurns: 0,
+      maxTurns: MAX_DIALOGUE_TURNS_PER_SESSION,
+      initiatorId,
+      motivation,
+      tags: [],
+    };
+
+    this.worldManager.saveDialogueSession(session);
+    this.characterManager.updateState(initiatorId, {
+      currentAction: "in_conversation",
+      currentActionTarget: responderId,
+      actionStartTick: absNow,
+      actionEndTick: 0,
+    });
+    this.characterManager.updateState(responderId, {
+      currentAction: "in_conversation",
+      currentActionTarget: initiatorId,
+      actionStartTick: absNow,
+      actionEndTick: 0,
+    });
+    return session;
+  }
+
+  private async runDialogueSession(
+    session: DialogueSession,
+    gameTime: GameTime,
+    absNow: number,
+  ): Promise<SimulationEvent[]> {
+    const events: SimulationEvent[] = [];
+    let workingSession = { ...session, turnsThisTick: 0 };
+
+    if (!this.isSessionContinuable(workingSession)) {
+      workingSession.endReason =
+        workingSession.endReason ?? "双方已不再处于可继续对话状态";
+      const finalDialogue = await this.dialogueGenerator.finalizeDialogueSession({
+        session: workingSession,
+        gameTime,
+      });
+      events.push(
+        this.dialogueCompleteToEvent(workingSession, finalDialogue, gameTime),
+      );
+      this.finishDialogueSession(workingSession, absNow);
+      return events;
+    }
+
+    while (
+      workingSession.turnsThisTick < MAX_DIALOGUE_TURNS_PER_TICK &&
+      workingSession.totalTurns < workingSession.maxTurns
+    ) {
+      const generated = await this.dialogueGenerator.generateNextTurn({
+        session: workingSession,
+        gameTime,
+      });
+      const turnIndexStart = workingSession.transcript.length;
+
+      workingSession.transcript = [...workingSession.transcript, generated.turn];
+      workingSession.turnsThisTick += 1;
+      workingSession.totalTurns += 1;
+      workingSession.lastUpdatedAt = gameTime;
+      workingSession.tags = Array.from(
+        new Set([...workingSession.tags, ...generated.tags]),
+      );
+
+      events.push(
+        this.dialogueTurnToEvent(
+          workingSession,
+          generated.turn,
+          turnIndexStart,
+          gameTime,
+        ),
+      );
+
+      if (
+        !generated.shouldContinue ||
+        workingSession.totalTurns >= workingSession.maxTurns
+      ) {
+        workingSession.endReason =
+          generated.endReason ??
+          (workingSession.totalTurns >= workingSession.maxTurns
+            ? "达到本次会话轮数上限"
+            : "自然结束");
+        const finalDialogue = await this.dialogueGenerator.finalizeDialogueSession({
+          session: workingSession,
+          gameTime,
+        });
+        events.push(
+          this.dialogueCompleteToEvent(workingSession, finalDialogue, gameTime),
+        );
+        this.finishDialogueSession(workingSession, absNow);
+        return events;
+      }
+
+      const [charA, charB] = workingSession.participants;
+      workingSession.nextSpeaker =
+        generated.suggestedNextSpeaker &&
+        workingSession.participants.includes(generated.suggestedNextSpeaker)
+          ? generated.suggestedNextSpeaker
+          : generated.turn.speaker === charA
+            ? charB
+            : charA;
+    }
+
+    this.worldManager.saveDialogueSession(workingSession);
+    return events;
+  }
+
+  private finishDialogueSession(session: DialogueSession, absNow: number): void {
+    this.worldManager.deleteDialogueSession(session.id);
+    const idleDuration = 1 + Math.floor(Math.random() * 2);
+
+    for (const charId of session.participants) {
+      this.characterManager.updateState(charId, {
+        currentAction: "post_dialogue",
+        currentActionTarget: null,
+        actionStartTick: absNow,
+        actionEndTick: absNow + idleDuration,
+      });
+    }
+  }
+
+  private dialogueTurnToEvent(
+    session: DialogueSession,
+    turn: DialogueTurn,
+    turnIndexStart: number,
+    gameTime: GameTime,
+  ): SimulationEvent {
+    const targetId = session.participants.find((id) => id !== turn.speaker);
+    const data: DialogueEventData = {
+      conversationId: session.id,
+      phase: "turn",
+      turns: [turn],
+      turnIndexStart,
+      isFinal: false,
+      participants: [...session.participants],
+    };
+
+    return {
+      id: generateId(),
+      gameDay: gameTime.day,
+      gameTick: gameTime.tick,
+      type: "dialogue",
+      actorId: turn.speaker,
+      targetId,
+      location: session.location,
+      data,
+      innerMonologue: turn.innerMonologue,
+      tags: [...session.tags],
+    };
+  }
+
+  private dialogueCompleteToEvent(
+    session: DialogueSession,
+    dialogue: DialogueResult,
+    gameTime: GameTime,
+  ): SimulationEvent {
+    const data: DialogueEventData = {
+      conversationId: session.id,
+      phase: "complete",
+      turns: dialogue.turns,
+      turnIndexStart: 0,
+      isFinal: true,
+      participants: dialogue.participants,
+      memoriesGenerated: dialogue.memoriesGenerated,
+      relationshipDeltas: dialogue.relationshipDeltas,
+      endReason: dialogue.endReason,
+    };
+
+    return {
+      id: generateId(),
+      gameDay: gameTime.day,
+      gameTick: gameTime.tick,
+      type: "dialogue",
+      actorId: dialogue.participants[0],
+      targetId: dialogue.participants[1],
+      location: session.location,
+      data,
+      tags: dialogue.tags,
+    };
+  }
+
+  private async evaluateRecentMemories(gameTime: GameTime): Promise<void> {
+    const allProfiles = this.characterManager.getAllProfiles();
+    const pendingMemories: { id: string; content: string }[] = [];
+
+    for (const profile of allProfiles) {
+      const memories = this.characterManager.memoryManager.getMemoriesByDay(
+        profile.id,
+        gameTime.day,
+      );
+      for (const m of memories) {
+        if (m.gameTick === gameTime.tick && m.importance === 5 && m.type !== "reflection") {
+          pendingMemories.push({ id: m.id, content: m.content });
+        }
+      }
+    }
+
+    if (pendingMemories.length === 0) return;
+
+    try {
+      const messages = this.promptBuilder.buildMemoryEvalMessages({
+        memories: pendingMemories,
+      });
+      const result = await this.llmClient.call({
+        messages,
+        schema: MemoryEvalSchema,
+        options: { taskType: "memory_eval" },
+      });
+
+      for (const evaluation of result.data.evaluations) {
+        try {
+          memoryStore.updateMemory(evaluation.memoryId, {
+            importance: evaluation.importance,
+            emotionalValence: evaluation.emotionalValence,
+            emotionalIntensity: evaluation.emotionalIntensity,
+            tags: evaluation.tags,
+          });
+        } catch {
+          // memory may not exist
+        }
+      }
+
+      this.characterManager.memoryManager.clearCache();
+    } catch (err) {
+      console.error("[SimEngine] Memory evaluation error:", err);
+    }
+  }
+
+  private scheduleRecentMemoryEvaluation(gameTime: GameTime): void {
+    const queuedTime = { ...gameTime };
+
+    this.memoryEvalQueue = this.memoryEvalQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await this.evaluateRecentMemories(queuedTime);
+      })
+      .catch((err) => {
+        console.error("[SimEngine] Background memory evaluation error:", err);
+      });
+  }
+
+  private async runReflection(
+    gameTime: GameTime,
+  ): Promise<SimulationEvent[]> {
+    const events: SimulationEvent[] = [];
+    const profiles = this.characterManager.getAllProfiles();
+
+    for (const profile of profiles) {
+      try {
+        const todayMemories =
+          this.characterManager.memoryManager.getMemoriesByDay(
+            profile.id,
+            gameTime.day,
+          );
+
+        if (todayMemories.length < 3) continue;
+
+        const recentMemoriesText = todayMemories
+          .map((m) => `- [${m.id}] ${m.content}`)
+          .join("\n");
+
+        const relationships =
+          this.characterManager.relationshipManager.getAllRelationshipsOf(
+            profile.id,
+          );
+        const relationshipSummary = relationships
+          .filter((r) => r.familiarity > 5)
+          .map((r) => {
+            const target = this.characterManager.getProfile(r.targetId);
+            return `${target.name}: 信任${Math.round(r.trust)} 好感${Math.round(r.affection)} 尊重${Math.round(r.respect)}`;
+          })
+          .join("\n");
+
+        const messages = this.promptBuilder.buildReflectionMessages({
+          profile,
+          gameDay: gameTime.day,
+          recentMemories: recentMemoriesText,
+          relationshipSummary,
+        });
+
+        const result = await this.llmClient.call({
+          messages,
+          schema: ReflectionSchema,
+          options: { taskType: "reflection", characterId: profile.id },
+        });
+
+        for (const insight of result.data.insights) {
+          this.characterManager.memoryManager.addMemory({
+            characterId: profile.id,
+            type: "reflection",
+            content: insight.content,
+            gameTime,
+            importance: insight.importance,
+            emotionalValence: 0,
+            emotionalIntensity: 0,
+            tags: insight.tags,
+          });
+
+          for (const refId of insight.relatedMemoryIds) {
+            try {
+              const refMem = memoryStore.getMemory(refId);
+              memoryStore.updateMemory(refId, {
+                decayFactor: refMem.decayFactor * 0.3,
+              });
+            } catch {
+              // referenced memory may not exist
+            }
+          }
+        }
+
+        const state = this.characterManager.getState(profile.id);
+        const shift = result.data.emotionShift;
+        this.characterManager.updateState(profile.id, {
+          emotionValence: Math.max(
+            -5,
+            Math.min(5, state.emotionValence + shift.valence),
+          ),
+          emotionArousal: Math.max(
+            0,
+            Math.min(10, state.emotionArousal + shift.arousal),
+          ),
+        });
+
+        if (result.data.relationshipInsights) {
+          for (const ri of result.data.relationshipInsights) {
+            const resolvedTargetId = this.resolveId(ri.targetId);
+            try {
+              this.characterManager.relationshipManager.updateRelationship(
+                profile.id,
+                resolvedTargetId,
+                ri.deltas,
+              );
+            } catch {
+              // relationship pair may not exist
+            }
+          }
+        }
+
+        if (result.data.currentFocus) {
+          this.worldManager.setGlobal(
+            `current_focus:${profile.id}`,
+            result.data.currentFocus,
+          );
+        }
+
+        events.push({
+          id: generateId(),
+          gameDay: gameTime.day,
+          gameTick: gameTime.tick,
+          type: "reflection",
+          actorId: profile.id,
+          location: state.location,
+          data: {
+            insights: result.data.insights.map((i) => i.content),
+            emotionShift: result.data.emotionShift,
+            relationshipInsights: result.data.relationshipInsights,
+          },
+          tags: ["reflection", "end_of_day"],
+        });
+      } catch (err) {
+        console.error(
+          `[SimEngine] Reflection error for ${profile.id}:`,
+          err,
+        );
+      }
+    }
+
+    return events;
+  }
+
+  private maybeGenerateObservationMemory(
+    charId: string,
+    perception: Perception,
+    gameTime: GameTime,
+    events: SimulationEvent[],
+  ): void {
+    const OBSERVATION_CHANCE = 0.2;
+    for (const c of perception.charactersHere) {
+      if (!c.emotionLabel) continue;
+      if (Math.random() >= OBSERVATION_CHANCE) continue;
+
+      const content = `在${perception.currentLocation}看到${c.name}${c.currentAction ? "正在" + c.currentAction : ""}，看起来${c.emotionLabel}`;
+      this.characterManager.memoryManager.addMemory({
+        characterId: charId,
+        type: "observation",
+        content,
+        gameTime,
+        importance: 4,
+        emotionalValence: 0,
+        emotionalIntensity: 2,
+        relatedCharacters: [c.id],
+        relatedLocation: this.characterManager.getState(charId).location,
+        tags: ["observation", "emotion_noticed"],
+      });
+
+      events.push({
+        id: generateId(),
+        gameDay: gameTime.day,
+        gameTick: gameTime.tick,
+        type: "memory_formed",
+        actorId: charId,
+        targetId: c.id,
+        location: this.characterManager.getState(charId).location,
+        data: { memoryType: "observation", content },
+        tags: ["observation"],
+      });
+    }
+  }
+
+  private runEndOfDayDecay(gameTime: GameTime): void {
+    for (const profile of this.characterManager.getAllProfiles()) {
+      try {
+        this.characterManager.memoryManager.processMemoryDecay(
+          profile.id,
+          gameTime.day,
+        );
+        this.characterManager.memoryManager.processMemoryConsolidation(
+          profile.id,
+        );
+      } catch (err) {
+        console.error(
+          `[SimEngine] Memory decay error for ${profile.id}:`,
+          err,
+        );
+      }
+    }
+  }
+}

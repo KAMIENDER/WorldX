@@ -1,0 +1,53 @@
+{
+  "runId": "demo_2026-04-17T13-29-43",
+  "userPrompt": "一个星露谷物语风格的简单小镇,有一个菜地,一个杂货店,一个中央广场",
+  "startedAt": "2026-04-17T13:29:43.709Z",
+  "steps": {
+    "design": {
+      "worldName": "青萝镇",
+      "sceneType": "closed",
+      "regionCount": 3,
+      "regionIds": [
+        "vegetable_plot",
+        "general_store",
+        "central_plaza"
+      ]
+    },
+    "map": {
+      "reviewPassed": true,
+      "attempts": 3,
+      "bytes": 899294
+    },
+    "compress": {
+      "width": 1376,
+      "height": 768,
+      "originalBytes": 899294,
+      "compressedBytes": 516008,
+      "strategy": "low_loss_palette_png"
+    },
+    "overlay": {
+      "batchCount": 1,
+      "batches": [
+        {
+          "batchIndex": 1,
+          "regionIds": [
+            "vegetable_plot",
+            "general_store",
+            "central_plaza"
+          ],
+          "detectedIds": [
+            "vegetable_plot",
+            "general_store",
+            "central_plaza"
+          ]
+        }
+      ]
+    },
+    "final": {
+      "extractedRegionCount": 3,
+      "warnings": []
+    }
+  },
+  "completedAt": "2026-04-17T13:33:46.101Z",
+  "warnings": []
+}

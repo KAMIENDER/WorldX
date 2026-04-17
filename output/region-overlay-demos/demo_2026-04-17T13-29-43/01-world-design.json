@@ -1,0 +1,470 @@
+{
+  "worldName": "青萝镇",
+  "worldDescription": "这是一个坐落在山谷脚下的宁静小镇，处处充满星露谷物语般的温暖治愈氛围。镇上居民彼此熟识，日常的生活围绕着菜地劳作、杂货店采购和中央广场的闲聊聚会展开。这里没有城市的喧嚣，只有风吹过麦浪的声响和邻里间亲切的招呼声。",
+  "mapDescription": "Top-down 16:9 16-bit pixel art map in classic Stardew Valley cozy retro style, color palette dominated by warm earthy browns, soft leafy greens, sunflower yellows and muted sky blues. Compact single-screen layout: a tilled vegetable plot sits on the west side, a clapboard general store with red gabled roof and hanging \"OPEN\" wooden sign stands on the east side, and a cobblestone central plaza with a large old oak tree and park bench occupies the middle. Narrow dirt paths connect all three areas, with small patches of wild grass and dandelions filling edge gaps, warm late spring morning ambient lighting.",
+  "sceneType": "closed",
+  "timeConfig": {
+    "startTime": "08:00",
+    "tickDurationMinutes": 15,
+    "maxTicks": null,
+    "displayFormat": "modern"
+  },
+  "multiDay": {
+    "enabled": true,
+    "dayTransitionText": "夜色降临，居民们纷纷回到家中休息，新的一天即将开始。",
+    "nextDayStartTime": "08:00"
+  },
+  "mapPlan": {
+    "buildingMode": "mostly_enterable",
+    "compositionNotes": "优先突出中央广场的核心位置，菜地和杂货店分别分布在东西两侧，动线清晰不拥挤，整体氛围协调温暖。",
+    "worldFunctionSummary": "支持居民日常劳作、采购、社交互动，还原慢节奏的治愈系小镇生活场景。",
+    "regionDesignNotes": "三个核心区域通过泥土小路自然连通，边界清晰但没有生硬阻隔，视觉风格统一为星露谷物语式的复古像素风。"
+  },
+  "worldActions": [
+    {
+      "id": "stroll_and_greet",
+      "name": "闲逛打招呼",
+      "description": "在小镇各处漫步，和遇到的居民问好聊天，了解最近的新鲜事。",
+      "availableWhenState": [
+        "available"
+      ],
+      "duration": 3,
+      "effects": [
+        {
+          "type": "character_need",
+          "target": "social",
+          "value": 12
+        },
+        {
+          "type": "character_need",
+          "target": "curiosity",
+          "value": 7
+        }
+      ],
+      "repeatable": true
+    },
+    {
+      "id": "forage_wild_plants",
+      "name": "采摘路边野菜野花",
+      "description": "在草地边采摘可食用的野菜或者漂亮的小野花，可自用或赠送他人。",
+      "availableWhenState": [
+        "available"
+      ],
+      "duration": 2,
+      "effects": [
+        {
+          "type": "character_need",
+          "target": "happiness",
+          "value": 8
+        }
+      ],
+      "repeatable": true
+    },
+    {
+      "id": "sit_and_rest",
+      "name": "坐下休息",
+      "description": "找就近的长椅或田埂坐下，吹吹风放松片刻，缓解疲劳。",
+      "availableWhenState": [
+        "available"
+      ],
+      "duration": 2,
+      "effects": [
+        {
+          "type": "character_need",
+          "target": "fatigue",
+          "value": -10
+        }
+      ],
+      "repeatable": true
+    }
+  ],
+  "regions": [
+    {
+      "id": "vegetable_plot",
+      "name": "公共菜地",
+      "description": "小镇居民共同劳作的公共菜地，种着土豆、生菜、番茄等常见应季蔬菜。",
+      "type": "outdoor",
+      "enterable": true,
+      "shapeConstraint": "flexible",
+      "placementHint": "west side",
+      "visualDescription": "Dark brown tilled soil with neat rows of green vegetable crops, wooden stakes for climbing vines, small wooden water bucket at the corner.",
+      "expectedObjects": [
+        "tilled soil rows",
+        "vegetable crops",
+        "water bucket",
+        "hoe",
+        "watering can"
+      ],
+      "interactions": [
+        {
+          "id": "tend_crops",
+          "name": "照料作物",
+          "description": "给作物浇水、除草、检查生长情况，帮助作物更好地成熟。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 4,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "achievement",
+              "value": 15
+            },
+            {
+              "type": "character_need",
+              "target": "fatigue",
+              "value": 5
+            }
+          ],
+          "repeatable": true
+        },
+        {
+          "id": "harvest_crops",
+          "name": "收获成熟作物",
+          "description": "摘下已经成熟的蔬菜，可以带回家食用或者拿去杂货店售卖。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 3,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "achievement",
+              "value": 20
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "general_store",
+      "name": "皮埃尔杂货店",
+      "description": "小镇唯一的杂货店，售卖种子、农具、日常用品，也收购居民种的蔬菜和采集的物产。",
+      "type": "building",
+      "enterable": true,
+      "shapeConstraint": "rectangular",
+      "placementHint": "east side",
+      "visualDescription": "Light cream clapboard exterior, red gabled roof, hanging wooden sign with painted seed packet, potted geraniums by the door.",
+      "expectedObjects": [
+        "service counter",
+        "seed shelves",
+        "food shelves",
+        "cash register",
+        "wooden stool"
+      ],
+      "interactions": [
+        {
+          "id": "buy_goods",
+          "name": "购买商品",
+          "description": "选购需要的种子、食物或日用品。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 2,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "practical",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        },
+        {
+          "id": "sell_produce",
+          "name": "售卖农产品",
+          "description": "把自己收获的蔬菜卖给杂货店老板换取零钱。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 2,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "wealth",
+              "value": 15
+            },
+            {
+              "type": "character_need",
+              "target": "achievement",
+              "value": 5
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "central_plaza",
+      "name": "中央广场",
+      "description": "小镇的核心公共区域，大家平时聚会聊天、举办小型活动的地方。",
+      "type": "outdoor",
+      "enterable": true,
+      "shapeConstraint": "flexible",
+      "placementHint": "center of the map",
+      "visualDescription": "Cobblestone paved ground, large old oak tree with thick green canopy, wooden park bench under the tree, small raised flower beds with colorful marigolds.",
+      "expectedObjects": [
+        "oak tree",
+        "wooden bench",
+        "flower beds",
+        "small notice board"
+      ],
+      "interactions": [
+        {
+          "id": "chat_with_neighbors",
+          "name": "和邻居聊天",
+          "description": "和广场上的居民坐在一起闲聊家常，分享最近的趣事。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 5,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "social",
+              "value": 20
+            },
+            {
+              "type": "character_need",
+              "target": "happiness",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        },
+        {
+          "id": "check_notice_board",
+          "name": "查看公告栏",
+          "description": "查看公告栏上的招工启事、活动通知和居民们留的便签。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 1,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "curiosity",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "name": "皮埃尔",
+      "role": "杂货店老板",
+      "personality": "热情精明，有点小抠门但为人正直，非常在乎自己的家人和小镇的居民，遇到有困难的人总会悄悄搭把手。",
+      "appearance": "Middle-aged man, short brown hair, round wire-rimmed glasses, wears a blue flannel shirt, dark denim overalls, scuffed brown work boots, a pencil tucked behind his ear.",
+      "motivation": "把杂货店经营好，给女儿攒大学学费，让小镇的居民都能方便地买到需要的东西。",
+      "socialStyle": "ambivert，喜欢和来店里的顾客拉家常，但忙起来的时候会非常专注，不太爱说话。",
+      "initialMemories": [
+        "上周李奶奶把自己种的大南瓜免费送给了我",
+        "女儿最近想要一辆新的自行车",
+        "下个月小镇要举办丰收节，需要提前准备物资"
+      ]
+    },
+    {
+      "name": "阿明",
+      "role": "种菜能手",
+      "personality": "憨厚老实，话不多，做事非常认真，对农作物的生长了如指掌，特别喜欢小动物，遇到流浪猫总会喂吃的。",
+      "appearance": "Young man in his 20s, tanned skin, short messy black hair, wears a faded green farm shirt, khaki pants, muddy rubber boots, a straw hat hanging around his neck.",
+      "motivation": "种出全镇最好吃的蔬菜，希望能攒钱开一个属于自己的小农场。",
+      "socialStyle": "introvert，不太擅长和人主动交流，但别人问他种菜的问题他会非常耐心地解答。",
+      "initialMemories": [
+        "上个月种的番茄终于结果了",
+        "前几天在菜地里捡到了一只流浪的小猫",
+        "皮埃尔说他的杂货店愿意长期收购我种的蔬菜"
+      ]
+    },
+    {
+      "name": "李奶奶",
+      "role": "退休居民",
+      "personality": "慈祥友善，烘焙手艺很好，喜欢给镇上的年轻人送自己做的点心，爱管闲事但都是出于好心，大家都很尊重她。",
+      "appearance": "Elderly woman in her 70s, curly gray hair tied in a bun, wears a floral print apron over a beige shirt, black cloth shoes, holds a woven bamboo basket in her hand.",
+      "motivation": "希望小镇的所有人都能开开心心的，每天都能吃到热乎的饭。",
+      "socialStyle": "extrovert，见到谁都要热情地打招呼，喜欢拉着年轻人问东问西，关心大家的生活。",
+      "initialMemories": [
+        "昨天给阿明送了我做的南瓜饼，他说很好吃",
+        "广场上的花是我上个月种的，现在都开了",
+        "我家的老母鸡最近下了很多鸡蛋，明天要给皮埃尔送一点"
+      ]
+    },
+    {
+      "name": "朵朵",
+      "role": "皮埃尔的女儿，小学生",
+      "personality": "活泼好动，好奇心强，喜欢到处乱跑，经常在广场上追蝴蝶，特别喜欢吃李奶奶做的点心，画画很好看。",
+      "appearance": "8-year-old girl, long brown pigtails tied with pink ribbons, wears a yellow polka dot dress, white socks, red sneakers, carries a small canvas bag with a cartoon rabbit print.",
+      "motivation": "每天都能开心地玩，希望快点长大帮爸爸看店，养一只属于自己的小猫。",
+      "socialStyle": "extrovert，不怕生，见到谁都敢上去搭话，喜欢给大家看自己画的画。",
+      "initialMemories": [
+        "李奶奶昨天给了我一块草莓蛋糕，特别好吃",
+        "阿明哥哥说等他的番茄熟了会给我送最大的那个",
+        "我上周在广场上画的画还贴在公告栏上呢"
+      ]
+    }
+  ],
+  "locations": [
+    {
+      "id": "vegetable_plot",
+      "name": "公共菜地",
+      "description": "小镇居民共同劳作的公共菜地，种着土豆、生菜、番茄等常见应季蔬菜。",
+      "expectedObjects": [
+        "tilled soil rows",
+        "vegetable crops",
+        "water bucket",
+        "hoe",
+        "watering can"
+      ],
+      "interactions": [
+        {
+          "id": "tend_crops",
+          "name": "照料作物",
+          "description": "给作物浇水、除草、检查生长情况，帮助作物更好地成熟。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 4,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "achievement",
+              "value": 15
+            },
+            {
+              "type": "character_need",
+              "target": "fatigue",
+              "value": 5
+            }
+          ],
+          "repeatable": true
+        },
+        {
+          "id": "harvest_crops",
+          "name": "收获成熟作物",
+          "description": "摘下已经成熟的蔬菜，可以带回家食用或者拿去杂货店售卖。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 3,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "achievement",
+              "value": 20
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "general_store",
+      "name": "皮埃尔杂货店",
+      "description": "小镇唯一的杂货店，售卖种子、农具、日常用品，也收购居民种的蔬菜和采集的物产。",
+      "expectedObjects": [
+        "service counter",
+        "seed shelves",
+        "food shelves",
+        "cash register",
+        "wooden stool"
+      ],
+      "interactions": [
+        {
+          "id": "buy_goods",
+          "name": "购买商品",
+          "description": "选购需要的种子、食物或日用品。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 2,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "practical",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        },
+        {
+          "id": "sell_produce",
+          "name": "售卖农产品",
+          "description": "把自己收获的蔬菜卖给杂货店老板换取零钱。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 2,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "wealth",
+              "value": 15
+            },
+            {
+              "type": "character_need",
+              "target": "achievement",
+              "value": 5
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    },
+    {
+      "id": "central_plaza",
+      "name": "中央广场",
+      "description": "小镇的核心公共区域，大家平时聚会聊天、举办小型活动的地方。",
+      "expectedObjects": [
+        "oak tree",
+        "wooden bench",
+        "flower beds",
+        "small notice board"
+      ],
+      "interactions": [
+        {
+          "id": "chat_with_neighbors",
+          "name": "和邻居聊天",
+          "description": "和广场上的居民坐在一起闲聊家常，分享最近的趣事。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 5,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "social",
+              "value": 20
+            },
+            {
+              "type": "character_need",
+              "target": "happiness",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        },
+        {
+          "id": "check_notice_board",
+          "name": "查看公告栏",
+          "description": "查看公告栏上的招工启事、活动通知和居民们留的便签。",
+          "availableWhenState": [
+            "available"
+          ],
+          "duration": 1,
+          "effects": [
+            {
+              "type": "character_need",
+              "target": "curiosity",
+              "value": 10
+            }
+          ],
+          "repeatable": true
+        }
+      ]
+    }
+  ]
+}

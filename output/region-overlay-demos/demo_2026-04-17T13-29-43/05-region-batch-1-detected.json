@@ -1,0 +1,41 @@
+[
+  {
+    "id": "vegetable_plot",
+    "name": "公共菜地",
+    "type": "outdoor",
+    "topLeft": {
+      "x": 78,
+      "y": 312
+    },
+    "bottomRight": {
+      "x": 398,
+      "y": 552
+    }
+  },
+  {
+    "id": "general_store",
+    "name": "皮埃尔杂货店",
+    "type": "building",
+    "topLeft": {
+      "x": 967,
+      "y": 240
+    },
+    "bottomRight": {
+      "x": 1193,
+      "y": 476
+    }
+  },
+  {
+    "id": "central_plaza",
+    "name": "中央广场",
+    "type": "outdoor",
+    "topLeft": {
+      "x": 529,
+      "y": 188
+    },
+    "bottomRight": {
+      "x": 795,
+      "y": 580
+    }
+  }
+]

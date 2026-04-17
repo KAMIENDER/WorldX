@@ -1,0 +1,53 @@
+{
+  "runId": "demo_2026-04-17T13-07-39",
+  "userPrompt": "一个星露谷物语风格的简单小镇,有一个菜地,一个杂货店,一个中央广场",
+  "startedAt": "2026-04-17T13:07:39.653Z",
+  "steps": {
+    "design": {
+      "worldName": "露草小镇",
+      "sceneType": "closed",
+      "regionCount": 3,
+      "regionIds": [
+        "community_vegetable_patch",
+        "general_store",
+        "central_plaza"
+      ]
+    },
+    "map": {
+      "reviewPassed": true,
+      "attempts": 2,
+      "bytes": 941180
+    },
+    "compress": {
+      "width": 1376,
+      "height": 768,
+      "originalBytes": 941180,
+      "compressedBytes": 578638,
+      "strategy": "low_loss_palette_png"
+    },
+    "overlay": {
+      "batchCount": 1,
+      "batches": [
+        {
+          "batchIndex": 1,
+          "regionIds": [
+            "community_vegetable_patch",
+            "general_store",
+            "central_plaza"
+          ],
+          "detectedIds": [
+            "community_vegetable_patch",
+            "general_store",
+            "central_plaza"
+          ]
+        }
+      ]
+    },
+    "final": {
+      "extractedRegionCount": 3,
+      "warnings": []
+    }
+  },
+  "completedAt": "2026-04-17T13:11:17.345Z",
+  "warnings": []
+}

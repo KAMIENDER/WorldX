@@ -1,0 +1,56 @@
+{
+  "runId": "demo_2026-04-17T13-46-07",
+  "userPrompt": "一个乡下的简单小镇,画风清新,有一个菜地,一个杂货店,一个小诊所,一个中央广场",
+  "startedAt": "2026-04-17T13:46:07.962Z",
+  "steps": {
+    "design": {
+      "worldName": "青禾小镇",
+      "sceneType": "closed",
+      "regionCount": 4,
+      "regionIds": [
+        "central_plaza",
+        "vegetable_plot",
+        "general_store",
+        "village_clinic"
+      ]
+    },
+    "map": {
+      "reviewPassed": true,
+      "attempts": 3,
+      "bytes": 1801955
+    },
+    "compress": {
+      "width": 1376,
+      "height": 768,
+      "originalBytes": 1801955,
+      "compressedBytes": 564421,
+      "strategy": "low_loss_palette_png"
+    },
+    "overlay": {
+      "batchCount": 1,
+      "batches": [
+        {
+          "batchIndex": 1,
+          "regionIds": [
+            "central_plaza",
+            "vegetable_plot",
+            "general_store",
+            "village_clinic"
+          ],
+          "detectedIds": [
+            "central_plaza",
+            "vegetable_plot",
+            "general_store",
+            "village_clinic"
+          ]
+        }
+      ]
+    },
+    "final": {
+      "extractedRegionCount": 4,
+      "warnings": []
+    }
+  },
+  "completedAt": "2026-04-17T13:51:57.283Z",
+  "warnings": []
+}

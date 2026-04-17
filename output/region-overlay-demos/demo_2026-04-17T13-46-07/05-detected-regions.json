@@ -1,0 +1,54 @@
+[
+  {
+    "id": "central_plaza",
+    "name": "中央广场",
+    "type": "outdoor",
+    "topLeft": {
+      "x": 545,
+      "y": 305
+    },
+    "bottomRight": {
+      "x": 851,
+      "y": 603
+    }
+  },
+  {
+    "id": "vegetable_plot",
+    "name": "公共菜地",
+    "type": "outdoor",
+    "topLeft": {
+      "x": 192,
+      "y": 300
+    },
+    "bottomRight": {
+      "x": 440,
+      "y": 584
+    }
+  },
+  {
+    "id": "general_store",
+    "name": "便民杂货店",
+    "type": "building",
+    "topLeft": {
+      "x": 971,
+      "y": 300
+    },
+    "bottomRight": {
+      "x": 1185,
+      "y": 576
+    }
+  },
+  {
+    "id": "village_clinic",
+    "name": "乡村小诊所",
+    "type": "building",
+    "topLeft": {
+      "x": 552,
+      "y": 50
+    },
+    "bottomRight": {
+      "x": 840,
+      "y": 198
+    }
+  }
+]
