@@ -48,7 +48,7 @@ router.get("/highlights", (req, res) => {
 
 export default router;
 
-function enrichEventTime(event: SimulationEvent) {
+export function enrichEventTime(event: SimulationEvent) {
   const sceneConfig = getSceneConfig();
   const eventTime = buildWorldTimeInfo(
     { day: event.gameDay, tick: event.gameTick },

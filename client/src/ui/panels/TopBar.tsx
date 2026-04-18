@@ -54,12 +54,14 @@ export function TopBar({
   const [showPauseToast, setShowPauseToast] = useState(false);
   const [deletePopoverOpen, setDeletePopoverOpen] = useState(false);
   const [deletingWorldId, setDeletingWorldId] = useState<string | null>(null);
+  const [isChangingTickGranularity, setIsChangingTickGranularity] = useState(false);
   const barRef = useRef<HTMLDivElement | null>(null);
   const deleteButtonRef = useRef<HTMLButtonElement | null>(null);
   const deletePopoverRef = useRef<HTMLDivElement | null>(null);
   const isRunning = simStatus === "running";
-  const isBusy = isRunning || isResetting || isSwitchingWorld;
-  const autoPlayToggleDisabled = isResetting || isSwitchingWorld || (isRunning && !autoPlayEnabled);
+  const isBusy = isRunning || isResetting || isSwitchingWorld || isChangingTickGranularity;
+  const autoPlayToggleDisabled =
+    isResetting || isSwitchingWorld || isChangingTickGranularity || (isRunning && !autoPlayEnabled);
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +193,30 @@ export function TopBar({
       );
     } finally {
       setDeletingWorldId(null);
+    }
+  };
+
+  const handleDevTickGranularityChange = async (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextValue = Number(event.target.value);
+    const currentValue = worldInfo?.sceneConfig.tickDurationMinutes ?? 15;
+    if (nextValue === currentValue) return;
+
+    const confirmed = window.confirm(
+      `Switch tick granularity to ${nextValue} minutes? This dev-only change will reset the current simulation state and reload the page.`,
+    );
+    if (!confirmed) {
+      event.target.value = String(currentValue);
+      return;
+    }
+
+    setIsChangingTickGranularity(true);
+    try {
+      await apiClient.setDevTickDurationMinutes(nextValue as 15 | 30 | 60);
+      window.location.reload();
+    } catch (error) {
+      console.warn("[TopBar] Failed to change dev tick granularity:", error);
+      window.alert(`Update failed: ${error instanceof Error ? error.message : String(error)}`);
+      setIsChangingTickGranularity(false);
     }
   };
 
@@ -398,6 +424,20 @@ export function TopBar({
 
         {isDevMode && (
           <>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, opacity: 0.72, whiteSpace: "nowrap" }}>Tick</span>
+              <select
+                value={String(worldInfo?.sceneConfig.tickDurationMinutes ?? 15)}
+                onChange={handleDevTickGranularityChange}
+                disabled={isBusy}
+                style={selectStyle}
+                title="Dev-only tick granularity; resets current simulation state"
+              >
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="60">1 h</option>
+              </select>
+            </div>
             <button
               onClick={onToggleWalkableOverlay}
               style={chipBtnStyle(showWalkableOverlay)}

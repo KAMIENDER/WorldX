@@ -22,6 +22,11 @@ export interface InteractiveObject {
 
 export interface MainAreaPointNode extends MainAreaPointInfo {}
 
+interface WalkablePlacementPreference {
+  cardinalClearance: number;
+  neighborhoodScore: number;
+}
+
 const MAIN_AREA_OCCUPANCY_RADIUS_PX = 24;
 
 export class MapManager {
@@ -255,8 +260,15 @@ export class MapManager {
     const dominantAxis = this.getDominantDialogueAxis(approachFrom);
     const alternateAxis = dominantAxis.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 };
     const axisCandidates = [dominantAxis, alternateAxis];
+    const validPairs: Array<{
+      initiator: { x: number; y: number };
+      responder: { x: number; y: number };
+      axisIndex: number;
+      minCardinalClearance: number;
+      neighborhoodScore: number;
+    }> = [];
 
-    for (const axis of axisCandidates) {
+    for (const [axisIndex, axis] of axisCandidates.entries()) {
       const initiator = {
         x: point.x + axis.x * halfDistance,
         y: point.y + axis.y * halfDistance,
@@ -266,8 +278,37 @@ export class MapManager {
         y: point.y - axis.y * halfDistance,
       };
       if (this.isPixelWalkable(initiator.x, initiator.y) && this.isPixelWalkable(responder.x, responder.y)) {
-        return { initiator, responder };
+        const initiatorGrid = this.pixelToGrid(initiator.x, initiator.y);
+        const responderGrid = this.pixelToGrid(responder.x, responder.y);
+        const initiatorPreference = this.getWalkablePlacementPreference(initiatorGrid.gx, initiatorGrid.gy);
+        const responderPreference = this.getWalkablePlacementPreference(responderGrid.gx, responderGrid.gy);
+        validPairs.push({
+          initiator,
+          responder,
+          axisIndex,
+          minCardinalClearance: Math.min(
+            initiatorPreference.cardinalClearance,
+            responderPreference.cardinalClearance,
+          ),
+          neighborhoodScore:
+            initiatorPreference.neighborhoodScore + responderPreference.neighborhoodScore,
+        });
       }
+    }
+
+    validPairs.sort((a, b) => {
+      if (b.minCardinalClearance !== a.minCardinalClearance) {
+        return b.minCardinalClearance - a.minCardinalClearance;
+      }
+      if (b.neighborhoodScore !== a.neighborhoodScore) {
+        return b.neighborhoodScore - a.neighborhoodScore;
+      }
+      return a.axisIndex - b.axisIndex;
+    });
+
+    const bestPair = validPairs[0];
+    if (bestPair) {
+      return { initiator: bestPair.initiator, responder: bestPair.responder };
     }
 
     const initiatorFallback = this.getMainAreaPlacement(pointId, initiatorId, {
@@ -348,7 +389,8 @@ export class MapManager {
 
     walkable.sort((a, b) => a.distance - b.distance);
     const preferredPool = walkable.slice(0, Math.max(1, Math.ceil(walkable.length * 0.65)));
-    const pick = preferredPool[Math.floor(Math.random() * preferredPool.length)];
+    const safetyPreferredPool = this.filterPreferredWalkableCandidates(preferredPool);
+    const pick = safetyPreferredPool[Math.floor(Math.random() * safetyPreferredPool.length)];
     return { x: pick.x, y: pick.y };
   }
 
@@ -430,7 +472,8 @@ export class MapManager {
     }
 
     if (walkable.length === 0) return null;
-    const pick = walkable[Math.floor(Math.random() * walkable.length)];
+    const preferredPool = this.filterPreferredWalkableCandidates(walkable);
+    const pick = preferredPool[Math.floor(Math.random() * preferredPool.length)];
     return this.gridToPixel(pick.gx, pick.gy);
   }
 
@@ -507,6 +550,62 @@ export class MapManager {
   private getOrderedOccupantIds(characterId: string, occupantIds?: string[]): string[] {
     const ordered = Array.from(new Set([...(occupantIds || []), characterId])).sort();
     return ordered.length > 0 ? ordered : [characterId];
+  }
+
+  private getWalkablePlacementPreference(gx: number, gy: number): WalkablePlacementPreference {
+    const cardinalNeighbors: Array<[number, number]> = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    const diagonalNeighbors: Array<[number, number]> = [
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ];
+    let cardinalClearance = 0;
+    let neighborhoodScore = 0;
+
+    for (const [dx, dy] of cardinalNeighbors) {
+      if (!this.isWalkable(gx + dx, gy + dy)) continue;
+      cardinalClearance += 1;
+      neighborhoodScore += 2;
+    }
+    for (const [dx, dy] of diagonalNeighbors) {
+      if (!this.isWalkable(gx + dx, gy + dy)) continue;
+      neighborhoodScore += 1;
+    }
+
+    return { cardinalClearance, neighborhoodScore };
+  }
+
+  private filterPreferredWalkableCandidates<T extends { gx: number; gy: number }>(candidates: T[]): T[] {
+    if (candidates.length <= 1) return candidates;
+
+    const scored = candidates.map((candidate) => ({
+      candidate,
+      preference: this.getWalkablePlacementPreference(candidate.gx, candidate.gy),
+    }));
+    scored.sort((a, b) => {
+      if (b.preference.cardinalClearance !== a.preference.cardinalClearance) {
+        return b.preference.cardinalClearance - a.preference.cardinalClearance;
+      }
+      return b.preference.neighborhoodScore - a.preference.neighborhoodScore;
+    });
+
+    const best = scored[0]?.preference;
+    if (!best) return candidates;
+
+    const relaxedNeighborhoodFloor = Math.max(0, best.neighborhoodScore - 1);
+    return scored
+      .filter(
+        ({ preference }) =>
+          preference.cardinalClearance === best.cardinalClearance &&
+          preference.neighborhoodScore >= relaxedNeighborhoodFloor,
+      )
+      .map(({ candidate }) => candidate);
   }
 
   private getMainAreaOccupancyOffsets(count: number): Array<[number, number]> {

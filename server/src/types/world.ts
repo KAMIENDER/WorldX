@@ -65,6 +65,8 @@ export interface InteractionConfig {
   duration: number;
   effects: Effect[];
   repeatable?: boolean;
+  /** When true, this interaction requires dialogue with the anchored character instead of standalone object interaction */
+  requiresAnchor?: boolean;
 }
 
 /** 世界级动作定义 */

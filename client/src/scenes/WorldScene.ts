@@ -8,7 +8,23 @@ import { CameraController } from "../systems/CameraController";
 import { CharacterSprite } from "../objects/CharacterSprite";
 import { MBTI_COLORS, getCharacterColor, actionToEmoji, createCharacterDisplayMetrics } from "../config/game-config";
 import { apiClient } from "../ui/services/api-client";
-import type { DialogueEventData, SimulationEvent } from "../types/api";
+import type { CharacterInfo, DialogueEventData, SimulationEvent } from "../types/api";
+
+type DialoguePlaybackTurn = {
+  speaker: string;
+  content: string;
+  innerMonologue?: string;
+  participants?: string[];
+};
+
+type DialoguePlaybackLane = {
+  queue: DialoguePlaybackTurn[];
+  timer: Phaser.Time.TimerEvent | null;
+};
+
+// Frontend-only dialogue playback tuning. Search these names to adjust pacing.
+const FRONTEND_DIALOGUE_BUBBLE_MS = 5000;
+const FRONTEND_DIALOGUE_INNER_MONOLOGUE_TAIL_MS = 1500;
 
 export class WorldScene extends Phaser.Scene {
   private mapManager!: MapManager;
@@ -19,15 +35,7 @@ export class WorldScene extends Phaser.Scene {
   private cameraController!: CameraController;
   private eventBus!: Phaser.Events.EventEmitter;
   private entityLayer!: Phaser.GameObjects.Container;
-  private dialogueQueue: Array<{
-    speaker: string;
-    content: string;
-    innerMonologue?: string;
-    participants?: string[];
-    sourceEvent?: SimulationEvent;
-    emitDialogueEvent?: boolean;
-  }> = [];
-  private dialoguePlaybackTimer: Phaser.Time.TimerEvent | null = null;
+  private dialoguePlaybackLanes: Map<string, DialoguePlaybackLane> = new Map();
   private dialogueEventChain: Promise<void> = Promise.resolve();
   private mapPixelWidth = 8192;
   private mapPixelHeight = 4608;
@@ -35,6 +43,12 @@ export class WorldScene extends Phaser.Scene {
   private regionBoundsOverlay: Phaser.GameObjects.Container | null = null;
   private mainAreaPointsOverlay: Phaser.GameObjects.Graphics | null = null;
   private interactiveObjectsOverlay: Phaser.GameObjects.Container | null = null;
+  private lastObservedDay: number | null = null;
+  private tickPlaybackActive = false;
+  private tickPlaybackEventsFlushed = false;
+  private pendingPlaybackAsyncOps = 0;
+  private pendingDialogueCleanupTimers = 0;
+  private playbackCompletionCheckTimer: Phaser.Time.TimerEvent | null = null;
 
   constructor() {
     super("WorldScene");
@@ -104,6 +118,25 @@ export class WorldScene extends Phaser.Scene {
     this.eventBus.on("set_tick_interval", (intervalMs: number) => {
       this.playbackController.setTickIntervalMs(intervalMs);
     });
+    const onTimeUpdate = (time: { day: number }) => {
+      const previousDay = this.lastObservedDay;
+      this.lastObservedDay = time.day;
+      if (previousDay != null && time.day > previousDay) {
+        void this.trackPlaybackAsync(this.handleSceneDayChange());
+      }
+    };
+    const onTickPlaybackStarted = () => {
+      this.tickPlaybackActive = true;
+      this.tickPlaybackEventsFlushed = false;
+      if (this.playbackCompletionCheckTimer) {
+        this.playbackCompletionCheckTimer.remove(false);
+        this.playbackCompletionCheckTimer = null;
+      }
+    };
+    const onTickPlaybackEventsFlushed = () => {
+      this.tickPlaybackEventsFlushed = true;
+      this.scheduleTickPlaybackCompletionCheck();
+    };
     const onToggleWalkableOverlay = (visible: boolean) => {
       this.setWalkableOverlayVisible(visible);
     };
@@ -120,11 +153,17 @@ export class WorldScene extends Phaser.Scene {
     this.eventBus.on("toggle_debug_region_bounds_overlay", onToggleRegionBoundsOverlay);
     this.eventBus.on("toggle_debug_main_area_points_overlay", onToggleMainAreaPointsOverlay);
     this.eventBus.on("toggle_debug_interactive_objects_overlay", onToggleInteractiveObjectsOverlay);
+    this.eventBus.on("time_update", onTimeUpdate);
+    this.eventBus.on("tick_playback_started", onTickPlaybackStarted);
+    this.eventBus.on("tick_playback_events_flushed", onTickPlaybackEventsFlushed);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.eventBus.off("toggle_debug_walkable_overlay", onToggleWalkableOverlay);
       this.eventBus.off("toggle_debug_region_bounds_overlay", onToggleRegionBoundsOverlay);
       this.eventBus.off("toggle_debug_main_area_points_overlay", onToggleMainAreaPointsOverlay);
       this.eventBus.off("toggle_debug_interactive_objects_overlay", onToggleInteractiveObjectsOverlay);
+      this.eventBus.off("time_update", onTimeUpdate);
+      this.eventBus.off("tick_playback_started", onTickPlaybackStarted);
+      this.eventBus.off("tick_playback_events_flushed", onTickPlaybackEventsFlushed);
     });
 
     this.initAsync();
@@ -157,11 +196,16 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private async initCharacters() {
+    await this.syncCharactersFromServer();
+  }
+
+  private async syncCharactersFromServer(): Promise<void> {
     const characters = await apiClient.getCharacters();
     console.log("[WorldScene] Got characters:", characters.length);
     const zoom = this.cameras.main.zoom;
     const displayMetrics = createCharacterDisplayMetrics(this.mapPixelWidth, this.mapPixelHeight);
     const mainAreaOccupants = new Map<string, string[]>();
+    const seenCharacterIds = new Set<string>();
 
     for (const char of characters) {
       if (char.location !== "main_area" || !char.mainAreaPointId) continue;
@@ -171,45 +215,96 @@ export class WorldScene extends Phaser.Scene {
     }
 
     for (const [index, char] of characters.entries()) {
-      const pos =
-        (char.location === "main_area" && char.mainAreaPointId
-          ? this.mapManager.getMainAreaPlacement(char.mainAreaPointId, char.id, {
-              occupantIds: mainAreaOccupants.get(char.mainAreaPointId) ?? [char.id],
-            })
-          : null) ||
-        this.mapManager.getRandomWalkablePointInLocation(char.location, {
-          preferInset: this.mapManager.isPinnedLocation(char.location),
-        }) ||
-        { x: 400, y: 300 };
+      seenCharacterIds.add(char.id);
+      const pos = this.getCharacterPlacement(char, mainAreaOccupants);
+      let sprite = this.characterSprites.get(char.id);
 
-      const color = char.mbti
-        ? (MBTI_COLORS[char.mbti] || getCharacterColor(index))
-        : getCharacterColor(index);
+      if (!sprite) {
+        const color = char.mbti
+          ? (MBTI_COLORS[char.mbti] || getCharacterColor(index))
+          : getCharacterColor(index);
+        sprite = new CharacterSprite(this, pos.x, pos.y, {
+          characterId: char.id,
+          name: char.name,
+          mbti: char.mbti || "",
+          color,
+          displayMetrics,
+        });
+        sprite.enableClick((id) => this.eventBus.emit("character_clicked", id));
+        this.entityLayer.add(sprite);
+        this.characterSprites.set(char.id, sprite);
+      }
 
-      const sprite = new CharacterSprite(this, pos.x, pos.y, {
-        characterId: char.id,
-        name: char.name,
-        mbti: char.mbti || "",
-        color,
-        displayMetrics,
-      });
-
-      sprite.currentLocationId = char.location;
-      sprite.mainAreaPointId = char.mainAreaPointId ?? null;
-      sprite.profileAnchor = char.anchor || null;
-      sprite.setCurrentAction(char.currentAction);
-      sprite.setActionIcon(actionToEmoji(char.currentAction));
-      sprite.setMovementAnchor({
-        x: pos.x,
-        y: pos.y,
-        pinned: this.mapManager.isPinnedLocation(char.location) || !!char.anchor,
-      });
-      sprite.syncOverlayZoom(zoom);
-      sprite.enableClick((id) => this.eventBus.emit("character_clicked", id));
-
-      this.entityLayer.add(sprite);
-      this.characterSprites.set(char.id, sprite);
+      this.applyCharacterSnapshotToSprite(sprite, char, pos, zoom);
     }
+
+    for (const [charId, sprite] of Array.from(this.characterSprites.entries())) {
+      if (seenCharacterIds.has(charId)) continue;
+      sprite.destroy();
+      this.characterSprites.delete(charId);
+    }
+  }
+
+  private getCharacterPlacement(
+    char: CharacterInfo,
+    mainAreaOccupants: Map<string, string[]>,
+  ): { x: number; y: number } {
+    return (
+      (char.location === "main_area" && char.mainAreaPointId
+        ? this.mapManager.getMainAreaPlacement(char.mainAreaPointId, char.id, {
+            occupantIds: mainAreaOccupants.get(char.mainAreaPointId) ?? [char.id],
+          })
+        : null) ||
+      this.mapManager.getRandomWalkablePointInLocation(char.location, {
+        preferInset: this.mapManager.isPinnedLocation(char.location),
+      }) ||
+      { x: 400, y: 300 }
+    );
+  }
+
+  private applyCharacterSnapshotToSprite(
+    sprite: CharacterSprite,
+    char: CharacterInfo,
+    pos: { x: number; y: number },
+    zoom: number,
+  ): void {
+    sprite.stopMoving();
+    sprite.clearTransientUi();
+    sprite.setPosition(pos.x, pos.y);
+    sprite.currentLocationId = char.location;
+    sprite.mainAreaPointId = char.mainAreaPointId ?? null;
+    sprite.profileAnchor = char.anchor || null;
+    sprite.setCurrentAction(char.currentAction);
+    sprite.setActionIcon(actionToEmoji(char.currentAction));
+    sprite.setMovementAnchor({
+      x: pos.x,
+      y: pos.y,
+      pinned: this.mapManager.isPinnedLocation(char.location) || !!char.anchor,
+    });
+    sprite.syncOverlayZoom(zoom);
+  }
+
+  private async handleSceneDayChange(): Promise<void> {
+    this.clearDialoguePlayback();
+    try {
+      await this.syncCharactersFromServer();
+    } catch (error) {
+      console.warn("[WorldScene] Failed to sync characters after scene change:", error);
+    }
+  }
+
+  private clearDialoguePlayback(): void {
+    for (const lane of this.dialoguePlaybackLanes.values()) {
+      lane.queue = [];
+      lane.timer?.remove(false);
+      lane.timer = null;
+    }
+    this.dialoguePlaybackLanes.clear();
+    for (const sprite of this.characterSprites.values()) {
+      sprite.stopMoving();
+      sprite.clearTransientUi();
+    }
+    this.scheduleTickPlaybackCompletionCheck();
   }
 
   private handleSimEvent(event: SimulationEvent) {
@@ -222,10 +317,12 @@ export class WorldScene extends Phaser.Scene {
           sprite?.setActionIcon("");
           const pointId =
             typeof event.data?.toPointId === "string" ? event.data.toPointId : null;
-          this.characterMovement.moveToLocation(event.actorId, destination, {
-            force: true,
-            mainAreaPointId: pointId,
-          });
+          void this.trackPlaybackAsync(
+            this.characterMovement.moveToLocation(event.actorId, destination, {
+              force: true,
+              mainAreaPointId: pointId,
+            }),
+          );
           this.maybeShowActionMonologue(event);
         }
         break;
@@ -240,7 +337,9 @@ export class WorldScene extends Phaser.Scene {
         }
         const objectId = event.data?.objectId ?? event.targetId;
         if (objectId && event.actorId && event.data?.actionType === "interact_object") {
-          this.characterMovement.moveToObject(event.actorId, objectId);
+          void this.trackPlaybackAsync(
+            this.characterMovement.moveToObject(event.actorId, objectId),
+          );
         }
         this.maybeShowActionMonologue(event);
         break;
@@ -256,11 +355,13 @@ export class WorldScene extends Phaser.Scene {
       }
 
       case "dialogue":
-        this.dialogueEventChain = this.dialogueEventChain
-          .then(() => this.handleDialogue(event))
-          .catch((error) => {
-            console.warn("[WorldScene] Failed to handle dialogue event:", error);
-          });
+        this.dialogueEventChain = this.trackPlaybackAsync(
+          this.dialogueEventChain
+            .then(() => this.handleDialogue(event))
+            .catch((error) => {
+              console.warn("[WorldScene] Failed to handle dialogue event:", error);
+            }),
+        );
         break;
 
       case "event_triggered":
@@ -299,19 +400,22 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
+    this.eventBus.emit("dialogue", event);
+
     if (dialogue.phase === "turn" && dialogue.turns?.length) {
-      dialogue.turns.forEach((turn, index) => {
-        this.dialogueQueue.push({
+      const laneKey = this.getDialogueLaneKey(dialogue);
+      const lane = this.getOrCreateDialoguePlaybackLane(laneKey);
+      dialogue.turns.forEach((turn) => {
+        lane.queue.push({
           speaker: turn.speaker,
           content: turn.content,
           innerMonologue: turn.innerMonologue,
           participants: dialogue.participants,
-          sourceEvent: event,
-          emitDialogueEvent: index === 0,
         });
       });
-      this.playNextDialogueTurn();
+      this.playNextDialogueTurn(laneKey);
     } else if (dialogue.phase === "complete" && dialogue.participants?.length) {
+      this.pendingDialogueCleanupTimers += 1;
       this.time.delayedCall(1200, () => {
         for (const participantId of dialogue.participants || []) {
           const sprite = this.characterSprites.get(participantId);
@@ -319,11 +423,9 @@ export class WorldScene extends Phaser.Scene {
           sprite.setCurrentAction(null);
           sprite.setActionIcon("");
         }
+        this.pendingDialogueCleanupTimers = Math.max(0, this.pendingDialogueCleanupTimers - 1);
+        this.scheduleTickPlaybackCompletionCheck();
       });
-    }
-
-    if (dialogue.phase === "complete") {
-      this.eventBus.emit("dialogue", event);
     }
   }
 
@@ -336,15 +438,46 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private playNextDialogueTurn() {
-    if (this.dialoguePlaybackTimer || this.dialogueQueue.length === 0) {
+  private getDialogueLaneKey(dialogue: DialogueEventData): string {
+    if (dialogue.conversationId) {
+      return dialogue.conversationId;
+    }
+    return [...(dialogue.participants ?? [])].sort().join("__");
+  }
+
+  private getOrCreateDialoguePlaybackLane(laneKey: string): DialoguePlaybackLane {
+    let lane = this.dialoguePlaybackLanes.get(laneKey);
+    if (!lane) {
+      lane = { queue: [], timer: null };
+      this.dialoguePlaybackLanes.set(laneKey, lane);
+    }
+    return lane;
+  }
+
+  private playNextDialogueTurn(laneKey: string) {
+    const lane = this.dialoguePlaybackLanes.get(laneKey);
+    if (!lane) {
+      this.scheduleTickPlaybackCompletionCheck();
+      return;
+    }
+    if (lane.timer || lane.queue.length === 0) {
+      if (!lane.timer && lane.queue.length === 0) {
+        this.dialoguePlaybackLanes.delete(laneKey);
+        this.scheduleTickPlaybackCompletionCheck();
+      }
       return;
     }
 
-    const nextTurn = this.dialogueQueue.shift();
-    if (!nextTurn) return;
+    const nextTurn = lane.queue.shift();
+    if (!nextTurn) {
+      this.dialoguePlaybackLanes.delete(laneKey);
+      this.scheduleTickPlaybackCompletionCheck();
+      return;
+    }
 
-    const baseDuration = Math.max(3000, nextTurn.content.length * 150);
+    const bubbleDuration = FRONTEND_DIALOGUE_BUBBLE_MS;
+    const playbackDuration =
+      bubbleDuration + (nextTurn.innerMonologue ? FRONTEND_DIALOGUE_INNER_MONOLOGUE_TAIL_MS : 0);
 
     if (nextTurn.participants?.length === 2) {
       const [idA, idB] = nextTurn.participants;
@@ -358,25 +491,24 @@ export class WorldScene extends Phaser.Scene {
 
     const sprite = this.characterSprites.get(nextTurn.speaker);
     if (sprite) {
-      sprite.showBubble(nextTurn.content, baseDuration);
-    }
-    if (nextTurn.emitDialogueEvent && nextTurn.sourceEvent) {
-      this.eventBus.emit("dialogue", nextTurn.sourceEvent);
+      sprite.showBubble(nextTurn.content, bubbleDuration);
     }
 
     const innerMonologue = nextTurn.innerMonologue;
-    const monologueGap = innerMonologue ? 2600 : 0;
     if (sprite && innerMonologue) {
-      this.time.delayedCall(baseDuration + 200, () => {
-        sprite.showMonologue(`…${innerMonologue}`);
+      this.time.delayedCall(300, () => {
+        sprite.showMonologue(innerMonologue);
       });
     }
 
-    this.dialoguePlaybackTimer = this.time.delayedCall(
-      baseDuration + 400 + monologueGap,
+    lane.timer = this.time.delayedCall(
+      playbackDuration,
       () => {
-        this.dialoguePlaybackTimer = null;
-        this.playNextDialogueTurn();
+        lane.timer = null;
+        if (lane.queue.length === 0) {
+          this.dialoguePlaybackLanes.delete(laneKey);
+        }
+        this.playNextDialogueTurn(laneKey);
       },
     );
   }
@@ -386,9 +518,45 @@ export class WorldScene extends Phaser.Scene {
     if (!monologue || !event.actorId) return;
     const sprite = this.characterSprites.get(event.actorId);
     if (!sprite) return;
-    this.time.delayedCall(350, () => {
-      sprite.showMonologue(`…${monologue}`);
+    sprite.showMonologue(monologue);
+  }
+
+  private trackPlaybackAsync<T>(promise: Promise<T>): Promise<T> {
+    if (!this.tickPlaybackActive) return promise;
+    this.pendingPlaybackAsyncOps += 1;
+    return promise.finally(() => {
+      this.pendingPlaybackAsyncOps = Math.max(0, this.pendingPlaybackAsyncOps - 1);
+      this.scheduleTickPlaybackCompletionCheck();
     });
+  }
+
+  private scheduleTickPlaybackCompletionCheck(delayMs = 0): void {
+    if (!this.tickPlaybackActive) return;
+    if (this.playbackCompletionCheckTimer) return;
+    this.playbackCompletionCheckTimer = this.time.delayedCall(delayMs, () => {
+      this.playbackCompletionCheckTimer = null;
+      this.maybeCompleteTickPlayback();
+    });
+  }
+
+  private maybeCompleteTickPlayback(): void {
+    if (!this.tickPlaybackActive || !this.tickPlaybackEventsFlushed) return;
+    if (this.pendingPlaybackAsyncOps > 0) return;
+    if (this.pendingDialogueCleanupTimers > 0) return;
+    if (this.hasPendingDialoguePlayback()) return;
+
+    this.tickPlaybackActive = false;
+    this.tickPlaybackEventsFlushed = false;
+    this.eventBus.emit("tick_playback_complete");
+  }
+
+  private hasPendingDialoguePlayback(): boolean {
+    for (const lane of this.dialoguePlaybackLanes.values()) {
+      if (lane.timer || lane.queue.length > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private setWalkableOverlayVisible(visible: boolean): void {

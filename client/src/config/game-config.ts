@@ -64,7 +64,7 @@ export function createCharacterDisplayMetrics(
     bubblePadding: Math.max(8, spriteHeight * 0.06),
     bubbleTailHeight: Math.max(4, spriteHeight * 0.035),
     bubbleCornerRadius: Math.max(6, spriteHeight * 0.045),
-    labelNameWorldSize: spriteWidth * 0.32,
+    labelNameWorldSize: spriteWidth * 0.25,
     labelMbtiWorldSize: spriteWidth * 0.25,
     labelIconWorldSize: spriteWidth * 0.26,
     labelGapWorld: spriteWidth * 0.07,

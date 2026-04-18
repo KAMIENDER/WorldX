@@ -4,7 +4,6 @@ import type {
   CharacterInfo,
   DialogueEventData,
   DialogueTurn,
-  GameTime,
   SimulationEvent,
 } from "../../types/api";
 import { buildCharacterNameMap } from "../utils/event-format";
@@ -26,12 +25,10 @@ function absoluteTick(day: number, tick: number, ticksPerScene: number): number 
 
 export function DialoguePanel({
   events,
-  currentTime,
   ticksPerScene,
   onDismiss,
 }: {
   events: SimulationEvent[];
-  currentTime: GameTime;
   ticksPerScene: number;
   onDismiss: (conversationId: string) => void;
 }) {
@@ -94,7 +91,7 @@ export function DialoguePanel({
         ...existing,
         participants: dialogue.participants || existing.participants,
         turns: mergedTurns,
-        isFinal: dialogue.isFinal,
+        isFinal: existing.isFinal || dialogue.isFinal,
         lastUpdatedMs: updatedAtMs,
         latestAbsTick: absTick,
         latestGameDay: event.gameDay,
@@ -110,10 +107,10 @@ export function DialoguePanel({
     });
   }, [events, ticksPerScene]);
 
-  const currentAbsTick = absoluteTick(currentTime.day, currentTime.tick, ticksPerScene);
+  const MAX_VISIBLE_TABS = 5;
   const visibleSessions = useMemo(
-    () => sessions.filter((s) => s.latestAbsTick >= currentAbsTick - 1),
-    [currentAbsTick, sessions],
+    () => (sessions.length > MAX_VISIBLE_TABS ? sessions.slice(0, MAX_VISIBLE_TABS) : sessions),
+    [sessions],
   );
 
   useEffect(() => {
@@ -188,13 +185,13 @@ export function DialoguePanel({
               </span>
             )}
           </div>
-          <div style={{ color: "#888", fontSize: 11, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {collapsed
-              ? (summarySession.turns.length > 0
-                  ? `${characterNames[summarySession.turns[summarySession.turns.length - 1].speaker] || summarySession.turns[summarySession.turns.length - 1].speaker}: ${summarySession.turns[summarySession.turns.length - 1].content}`
-                  : "（暂无内容）")
-              : `仅保留本 tick 与上个 tick 的对话`}
-          </div>
+          {collapsed && (
+            <div style={{ color: "#888", fontSize: 11, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {summarySession.turns.length > 0
+                ? `${characterNames[summarySession.turns[summarySession.turns.length - 1].speaker] || summarySession.turns[summarySession.turns.length - 1].speaker}: ${summarySession.turns[summarySession.turns.length - 1].content}`
+                : "（暂无内容）"}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <span style={{ color: "#888", fontSize: 11 }}>

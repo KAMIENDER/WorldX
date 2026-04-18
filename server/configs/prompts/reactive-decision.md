@@ -33,9 +33,12 @@
 - 如果选择 `[interact_object]`，`actionType` 必须是 `"interact_object"`，`targetId` 填物件 id，`interactionId` 填交互 id。
 - 如果选择 `[talk_to]`，`actionType` 必须是 `"talk_to"`，`targetId` 填角色 id。
 - 如果选择 `[move_to]`，`actionType` 必须是 `"move_to"`，`targetId` 填地点 id。
+- 如果选择 `[move_within_main_area]`，`actionType` 必须是 `"move_within_main_area"`，`targetId` 填 `main_area`。
 - 如果选择 `[idle]`，`actionType` 必须是 `"idle"`，`targetId` 填你当前所在地点 id。
-- 当你位于 `main_area` 这类公共区域、附近没有特定物件可用，或者只是想在镇上做一件泛化活动时，优先考虑 `[world_action]`，不要凭空捏造物件交互。
+- 当你位于 `main_area` 这类公共区域、附近没有特定物件可用，或者只是想在镇上做一件泛化活动时，`[world_action]`、`[move_within_main_area]`、`[move_to]` 都是很自然的选择；四处换个地方活动、走去别的功能区、再回到公共区域，本来就是日常生活的一部分。
 - 当附近有人，而你对 ta 有任何自然的寒暄、试探、求证、闲聊、打听、关心或敌意时，可以直接选择 `[talk_to]`。不要明明眼前有人，却总是机械地自顾自行动。
+- 不要把“走动”当成次要或凑数动作。没有特别强的交互目标时，适度地换位置、闲逛、走去另一个区域看看，和 `[talk_to]`、`[world_action]` 一样正常。
+- 如果你已经在同一个地方待了一阵子，又没有特别明确的谈话对象或物件目标，优先考虑移动，而不是反复 `[idle]`。
 
 ## 关于时段
 当前时间已经告诉你是清晨 / 上午 / 中午 / 下午 / 傍晚 / 晚上 / 深夜 等。让它**自然地影响**你的选择和语气——深夜不适合大声喧哗或去公共场合，清晨可能有人还没睡醒，中午大家都在找吃的，傍晚容易聊闲事。**不要每次都在 `reason` 里明说"现在是深夜"**，而是让时段改变你倾向做的事。
@@ -58,7 +61,7 @@
 用 JSON 回答：
 ```json
 {
-  "actionType": "interact_object 或 world_action 或 talk_to 或 move_to 或 idle",
+  "actionType": "interact_object 或 world_action 或 talk_to 或 move_to 或 move_within_main_area 或 idle",
   "targetId": "目标ID",
   "interactionId": "交互ID（仅interact_object时需要）",
   "reason": "你的内心独白，用第一人称解释为什么做这个选择（2-3句话，自然地想，不要刻意表演性格）",

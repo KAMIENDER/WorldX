@@ -12,9 +12,12 @@ export function buildActionMenu(
   characterManager: CharacterManager,
 ): string {
   const state = characterManager.getState(charId);
+  const profile = characterManager.getProfile(charId);
   const gameTime = worldManager.getCurrentTime();
 
   const recentInteractionIds = getRecentInteractionIds(charId, gameTime);
+  const isAnchored = !!profile.anchor;
+  const canInitiateDialogue = canInitiateDialogueHere(profile.anchor, state.location);
 
   const lines: string[] = [];
   let idx = 1;
@@ -42,15 +45,43 @@ export function buildActionMenu(
     lines.push(...worldActionLines);
   }
 
+  // Build anchor map: objectId / regionId → anchored character id
+  const anchorCharMap = new Map<string, string>();
+  for (const p of characterManager.getAllProfiles()) {
+    if (p.anchor) {
+      anchorCharMap.set(p.anchor.targetId, p.id);
+    }
+  }
+
+  // Collect requiresAnchor interactions that should become talk_to motivations
+  // key = anchored character id, value = list of interaction descriptions
+  const anchorInteractionsByChar = new Map<string, string[]>();
+
   const objectLines: string[] = [];
   const objects = worldManager.getLocationObjects(state.location);
-
   for (const obj of objects) {
     if (obj.currentUsers.length >= obj.capacity) continue;
 
     const interactions = worldManager.getAvailableInteractions(obj.id);
     for (const inter of interactions) {
       if (!inter.repeatable && recentInteractionIds.has(inter.id)) continue;
+
+      if (inter.requiresAnchor) {
+        const anchoredCharId = anchorCharMap.get(obj.id);
+        if (anchoredCharId && anchoredCharId !== charId) {
+          const anchoredState = characterManager.getState(anchoredCharId);
+          if (anchoredState.currentAction !== "in_conversation") {
+            const existing = anchorInteractionsByChar.get(anchoredCharId) ?? [];
+            existing.push(inter.name);
+            anchorInteractionsByChar.set(anchoredCharId, existing);
+            continue;
+          }
+        }
+        // Fallback: no anchored character found, or character is busy —
+        // show as normal interact_object for non-anchored visitors only.
+      }
+
+      if (isAnchored) continue;
 
       const durationMin = inter.duration * sceneConfig.tickDurationMinutes;
       const durationStr =
@@ -70,22 +101,69 @@ export function buildActionMenu(
     lines.push(...objectLines);
   }
 
-  const charLines: string[] = [];
-  for (const c of perception.charactersHere) {
-    const otherProfile = characterManager.getProfile(c.id);
-    const actionStr = c.currentAction ? `正在${c.currentAction}` : "空闲";
-    charLines.push(
-      `${idx}. [talk_to] ${c.name}(${otherProfile.mbtiType}, ${c.id}) — ${actionStr}`,
-    );
-    idx++;
-  }
-  if (charLines.length > 0) {
-    lines.push("【在场的人】");
-    lines.push(...charLines);
+  if (!isAnchored) {
+    const charLines: string[] = [];
+    for (const c of perception.charactersHere) {
+      const otherProfile = characterManager.getProfile(c.id);
+      const otherState = characterManager.getState(c.id);
+      if (!isLegalDirectTalkTarget(state.location, otherState.location)) continue;
+      if (otherState.currentAction === "in_conversation") continue;
+      const actionStr = c.currentAction ? `正在${c.currentAction}` : "空闲";
+      const anchorServices = anchorInteractionsByChar.get(c.id);
+      const serviceHint = anchorServices
+        ? ` [可交互：${anchorServices.join("、")}]`
+        : "";
+      charLines.push(
+        `${idx}. [talk_to] ${c.name}(${otherProfile.mbtiType}, ${c.id}) — ${actionStr}${serviceHint}`,
+      );
+      idx++;
+    }
+
+    // Also list anchored characters with services even if they weren't in
+    // perception.charactersHere (e.g. just outside conversable range but the
+    // character has anchor interactions available — rare but possible)
+    for (const [ancCharId, services] of anchorInteractionsByChar) {
+      if (charLines.some((line) => line.includes(ancCharId))) continue;
+      const ancProfile = characterManager.getProfile(ancCharId);
+      const ancState = characterManager.getState(ancCharId);
+      if (!isLegalDirectTalkTarget(state.location, ancState.location)) continue;
+      if (ancState.currentAction === "in_conversation") continue;
+      const actionStr = ancState.currentAction ? `正在${ancState.currentAction}` : "空闲";
+      charLines.push(
+        `${idx}. [talk_to] ${ancProfile.name}(${ancProfile.mbtiType}, ${ancCharId}) — ${actionStr} [可交互：${services.join("、")}]`,
+      );
+      idx++;
+    }
+
+    if (charLines.length > 0) {
+      lines.push("【在场的人】");
+      lines.push(...charLines);
+    }
   }
 
-  const profile = characterManager.getProfile(charId);
-  const isAnchored = !!profile.anchor;
+  if (canInitiateDialogue && isAnchored) {
+    const charLines: string[] = [];
+    for (const c of perception.charactersHere) {
+      const otherProfile = characterManager.getProfile(c.id);
+      const otherState = characterManager.getState(c.id);
+      if (!isLegalDirectTalkTarget(state.location, otherState.location)) continue;
+      if (otherState.currentAction === "in_conversation") continue;
+      const actionStr = c.currentAction ? `正在${c.currentAction}` : "空闲";
+      const anchorServices = anchorInteractionsByChar.get(c.id);
+      const serviceHint = anchorServices
+        ? ` [可交互：${anchorServices.join("、")}]`
+        : "";
+      charLines.push(
+        `${idx}. [talk_to] ${c.name}(${otherProfile.mbtiType}, ${c.id}) — ${actionStr}${serviceHint}`,
+      );
+      idx++;
+    }
+
+    if (charLines.length > 0) {
+      lines.push("【在场的人】");
+      lines.push(...charLines);
+    }
+  }
 
   if (!isAnchored) {
     const adjacent = worldManager.getAdjacentLocations(state.location);
@@ -139,4 +217,23 @@ function getRecentInteractionIds(
     }
   }
   return ids;
+}
+
+function isLegalDirectTalkTarget(
+  initiatorLocation: string,
+  targetLocation: string,
+): boolean {
+  return initiatorLocation === targetLocation;
+}
+
+function canInitiateDialogueHere(
+  anchor: { type: string; targetId: string } | undefined,
+  currentLocation: string,
+): boolean {
+  if (!anchor) return true;
+  return (
+    anchor.type === "region" &&
+    currentLocation !== "main_area" &&
+    currentLocation === anchor.targetId
+  );
 }

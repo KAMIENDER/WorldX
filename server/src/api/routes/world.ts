@@ -39,6 +39,28 @@ router.get("/info", (_req, res) => {
   });
 });
 
+router.post("/dev/tick-duration", (req, res) => {
+  if (!appContext.hasWorld) {
+    res.status(503).json({ error: "No world loaded" });
+    return;
+  }
+
+  const tickDurationMinutes = Number(req.body?.tickDurationMinutes);
+  if (![15, 30, 60].includes(tickDurationMinutes)) {
+    res.status(400).json({ error: "tickDurationMinutes must be one of 15, 30, 60" });
+    return;
+  }
+
+  appContext.setDevTickDurationMinutes(tickDurationMinutes);
+  const wm = appContext.worldManager;
+  res.json({
+    ok: true,
+    gameTime: buildWorldTimeInfo(wm.getCurrentTime(), wm.getSceneConfig()),
+    sceneConfig: wm.getSceneConfig(),
+    sceneRuntime: buildSceneRuntimeInfo(wm.getSceneConfig()),
+  });
+});
+
 router.get("/worlds", (_req, res) => {
   const currentWorldDir = appContext.getWorldDir();
   const currentWorldId = currentWorldDir ? path.basename(currentWorldDir) : null;

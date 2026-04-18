@@ -336,7 +336,6 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
                 return d?.conversationId && !dismissedIds.has(d.conversationId);
               }
             )}
-            currentTime={gameTime}
             ticksPerScene={ticksPerScene}
             onDismiss={(id) => setDismissedIds((prev) => new Set(prev).add(id))}
           />

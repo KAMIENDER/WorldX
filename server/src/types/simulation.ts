@@ -59,7 +59,6 @@ export interface DialogueSession {
   transcript: DialogueTurn[];
   turnsThisTick: number;
   totalTurns: number;
-  maxTurns: number;
   initiatorId: string;
   motivation: string;
   pendingReason?: string;
@@ -103,6 +102,8 @@ export interface Perception {
     name: string;
     currentAction: string | null;
     emotionLabel?: string;
+    locationId?: string;
+    locationName?: string;
   }[];
   recentEnvironmentChanges: string[];
   recentActions: string[];

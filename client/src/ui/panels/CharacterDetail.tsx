@@ -17,6 +17,35 @@ import {
 } from "../utils/event-format";
 
 type Tab = "history" | "relations" | "memory";
+type DialogueTurnRecord = {
+  kind: "dialogue_turn";
+  key: string;
+  gameDay: number;
+  gameTick: number;
+  timeString?: string;
+  createdAt?: string;
+  sortIndex: number;
+  event: SimulationEvent;
+  conversationId: string;
+  turnIndex: number;
+  speakerId: string;
+  listenerId?: string;
+  content: string;
+  innerMonologue?: string;
+};
+
+type EventRecord = {
+  kind: "event";
+  key: string;
+  gameDay: number;
+  gameTick: number;
+  timeString?: string;
+  createdAt?: string;
+  sortIndex: number;
+  event: SimulationEvent;
+};
+
+type HistoryRecord = DialogueTurnRecord | EventRecord;
 
 export function CharacterDetail({
   charId,
@@ -59,7 +88,7 @@ export function CharacterDetail({
       if (!eventTouchesCharacter(event, charId)) return;
       merged.set(event.id || `${event.type}-${event.gameDay}-${event.gameTick}-${index}`, event);
     });
-    return Array.from(merged.values()).sort(compareEventsDesc);
+    return buildHistoryRecords(Array.from(merged.values()));
   }, [charId, liveEvents, storedEvents]);
 
   const [editing, setEditing] = useState(false);
@@ -183,9 +212,9 @@ export function CharacterDetail({
 
       <div style={{ maxHeight: 320, overflow: "auto", fontSize: 11, color: "#ccc" }}>
         {tab === "history" &&
-          mergedHistory.map((event, i) => (
+          mergedHistory.map((record, i) => (
             <div
-              key={event.id || i}
+              key={record.key || i}
               style={{
                 padding: "6px 0",
                 borderBottom: "1px solid rgba(255,255,255,0.05)",
@@ -201,41 +230,57 @@ export function CharacterDetail({
                 }}
               >
                 <span style={{ color: "#666" }}>
-                  Day {event.gameDay} · {event.timeString || `T${event.gameTick}`}
+                  Day {record.gameDay} · {record.timeString || `T${record.gameTick}`}
                 </span>
-                <span style={{ color: typeColor(event.type), fontWeight: 600 }}>
-                  {formatEventType(event.type)}
+                <span style={{ color: typeColor(record.kind === "dialogue_turn" ? "dialogue" : record.event.type), fontWeight: 600 }}>
+                  {formatEventType(record.kind === "dialogue_turn" ? "dialogue" : record.event.type)}
                 </span>
               </div>
-              <div style={{ color: "#ddd", lineHeight: 1.5 }}>
-                {formatEventSummary(event, { characterNames, locationNames })}
-              </div>
-              {event.type === "dialogue" &&
-                Array.isArray(event.data?.turns) &&
-                event.data.turns.length > 0 && (
+              {record.kind === "dialogue_turn" ? (
+                <>
+                  <div style={{ color: "#ddd", lineHeight: 1.5 }}>
+                    <span style={{ color: "#74b9ff", fontWeight: 600 }}>
+                      {characterNames[record.speakerId] || record.speakerId}
+                    </span>
+                    <span style={{ color: "#bbb" }}>
+                      {" "}
+                      对{" "}
+                      {record.listenerId
+                        ? characterNames[record.listenerId] || record.listenerId
+                        : "对方"}{" "}
+                      说：
+                    </span>
+                  </div>
                   <div
                     style={{
-                      marginTop: 6,
+                      marginTop: 4,
                       padding: "8px 10px",
                       background: "rgba(255,255,255,0.04)",
                       borderRadius: 6,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
+                      color: "#ddd",
+                      lineHeight: 1.5,
                     }}
                   >
-                    {event.data.turns.map((turn: { speaker: string; content: string }, turnIndex: number) => (
-                      <div key={turnIndex}>
-                        <span style={{ color: "#74b9ff", fontWeight: 600 }}>
-                          {characterNames[turn.speaker] || turn.speaker}
-                        </span>
-                        <div style={{ marginTop: 2, color: "#ddd", lineHeight: 1.5 }}>
-                          {turn.content}
-                        </div>
-                      </div>
-                    ))}
+                    {record.content}
                   </div>
-                )}
+                  {record.innerMonologue && (
+                    <div style={{ marginTop: 4, padding: "4px 8px", background: "rgba(255,255,255,0.05)", borderRadius: 6, fontStyle: "italic", color: "#b2bec3" }}>
+                      💭 {record.innerMonologue}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{ color: "#ddd", lineHeight: 1.5 }}>
+                    {formatEventSummary(record.event, { characterNames, locationNames })}
+                  </div>
+                  {record.event.innerMonologue && (
+                    <div style={{ marginTop: 4, padding: "4px 8px", background: "rgba(255,255,255,0.05)", borderRadius: 6, fontStyle: "italic", color: "#b2bec3" }}>
+                      💭 {record.event.innerMonologue}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           ))}
         {tab === "relations" &&
@@ -268,10 +313,106 @@ function eventTouchesCharacter(event: SimulationEvent, charId: string): boolean 
   return false;
 }
 
-function compareEventsDesc(a: SimulationEvent, b: SimulationEvent): number {
+function buildHistoryRecords(events: SimulationEvent[]): HistoryRecord[] {
+  const records: HistoryRecord[] = [];
+  const dialogueTurns = new Map<string, DialogueTurnRecord>();
+  const completeDialogueEvents: Array<{ event: SimulationEvent; sortIndex: number }> = [];
+
+  for (const [sortIndex, event] of events.entries()) {
+    if (event.type !== "dialogue" || !Array.isArray(event.data?.turns)) {
+      records.push({
+        kind: "event",
+        key: event.id || `${event.type}-${event.gameDay}-${event.gameTick}-${records.length}`,
+        gameDay: event.gameDay,
+        gameTick: event.gameTick,
+        timeString: event.timeString,
+        createdAt: event.createdAt,
+        sortIndex,
+        event,
+      });
+      continue;
+    }
+
+    const phase = event.data?.phase;
+    if (phase === "turn") {
+      addDialogueTurnRecords(dialogueTurns, event, sortIndex);
+    } else if (phase === "complete") {
+      completeDialogueEvents.push({ event, sortIndex });
+    }
+  }
+
+  for (const { event, sortIndex } of completeDialogueEvents) {
+    addDialogueTurnRecords(dialogueTurns, event, sortIndex, true);
+  }
+
+  return [...records, ...Array.from(dialogueTurns.values())].sort(compareHistoryRecordsDesc);
+}
+
+function addDialogueTurnRecords(
+  target: Map<string, DialogueTurnRecord>,
+  event: SimulationEvent,
+  sortIndex: number,
+  onlyFillMissing = false,
+): void {
+  if (!Array.isArray(event.data?.turns) || event.data.turns.length === 0) return;
+
+  const participants = getDialogueParticipants(event);
+  const conversationId = event.data?.conversationId || [...participants].sort().join("__") || event.id;
+  const turnIndexStart =
+    typeof event.data?.turnIndexStart === "number" ? event.data.turnIndexStart : 0;
+
+  event.data.turns.forEach(
+    (turn: { speaker: string; content: string; innerMonologue?: string }, idx: number) => {
+      const turnIndex = turnIndexStart + idx;
+      const key = `${conversationId}:${turnIndex}`;
+      if (onlyFillMissing && target.has(key)) return;
+      const listenerId = participants.find((id) => id !== turn.speaker);
+      target.set(key, {
+        kind: "dialogue_turn",
+        key,
+        gameDay: event.gameDay,
+        gameTick: event.gameTick,
+        timeString: event.timeString,
+        createdAt: event.createdAt,
+        sortIndex,
+        event,
+        conversationId,
+        turnIndex,
+        speakerId: turn.speaker,
+        listenerId,
+        content: turn.content,
+        innerMonologue: turn.innerMonologue,
+      });
+    },
+  );
+}
+
+function getDialogueParticipants(event: SimulationEvent): string[] {
+  const fromData = Array.isArray(event.data?.participants)
+    ? event.data.participants.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  const fallback = [event.actorId, event.targetId].filter(
+    (id): id is string => typeof id === "string" && id.length > 0,
+  );
+  return Array.from(new Set([...fromData, ...fallback]));
+}
+
+function compareHistoryRecordsDesc(a: HistoryRecord, b: HistoryRecord): number {
   if (a.gameDay !== b.gameDay) return b.gameDay - a.gameDay;
   if (a.gameTick !== b.gameTick) return b.gameTick - a.gameTick;
-  return (b.createdAt || "").localeCompare(a.createdAt || "");
+
+  const createdAtCompare = (b.createdAt || "").localeCompare(a.createdAt || "");
+  if (createdAtCompare !== 0) return createdAtCompare;
+
+  if (a.sortIndex !== b.sortIndex) return b.sortIndex - a.sortIndex;
+
+  if (a.kind === "dialogue_turn" && b.kind === "dialogue_turn") {
+    return b.turnIndex - a.turnIndex;
+  }
+
+  if (a.kind === "dialogue_turn") return -1;
+  if (b.kind === "dialogue_turn") return 1;
+  return 0;
 }
 
 function typeColor(type: string): string {

@@ -1,14 +1,16 @@
-import { appendFileSync, writeFileSync } from "fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
 let logFilePath = null;
 
 /**
  * Initialize the pipeline logger. Call once at the start of a run.
- * @param {string} runDir - output directory for the current run
+ * @param {string} logDir - directory for pipeline logs
+ * @param {string} fileName - log file name
  */
-export function initLogger(runDir) {
-  logFilePath = join(runDir, "pipeline.log");
+export function initLogger(logDir, fileName = "pipeline.log") {
+  mkdirSync(logDir, { recursive: true });
+  logFilePath = join(logDir, fileName);
   writeFileSync(logFilePath, `=== Pipeline Log — ${new Date().toISOString()} ===\n\n`);
 }
 

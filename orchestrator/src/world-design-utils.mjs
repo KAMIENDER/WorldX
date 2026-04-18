@@ -33,7 +33,7 @@ function normalizeEffects(effects = [], fallbackNeed = "curiosity", fallbackDelt
 
 function normalizeInteraction(interaction, fallbackId, fallbackName) {
   const id = interaction?.id || fallbackId;
-  return {
+  const result = {
     id,
     name: interaction?.name || fallbackName || id,
     description: interaction?.description || "",
@@ -45,6 +45,10 @@ function normalizeInteraction(interaction, fallbackId, fallbackName) {
     effects: normalizeEffects(interaction?.effects),
     repeatable: interaction?.repeatable ?? true,
   };
+  if (interaction?.requiresAnchor === true) {
+    result.requiresAnchor = true;
+  }
+  return result;
 }
 
 function inferRegionType(region) {
@@ -179,6 +183,52 @@ function normalizeCharacterAnchor(anchor) {
   return undefined;
 }
 
+function parseTimeToMinutes(timeStr) {
+  if (typeof timeStr !== "string") return 0;
+  const [h, m] = timeStr.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+function normalizeTimeConfig(rawTimeConfig, sceneType) {
+  const tc = rawTimeConfig && typeof rawTimeConfig === "object" ? rawTimeConfig : {};
+  const startTime = typeof tc.startTime === "string" && tc.startTime ? tc.startTime : "08:00";
+  const displayFormat =
+    tc.displayFormat === "ancient_chinese" || tc.displayFormat === "fantasy"
+      ? tc.displayFormat
+      : "modern";
+
+  const TICK_DURATION = 15;
+  let maxTicks = null;
+
+  if (sceneType === "open") {
+    if (typeof tc.endTime === "string" && tc.endTime) {
+      const startMin = parseTimeToMinutes(startTime);
+      const endMin = parseTimeToMinutes(tc.endTime);
+      const diff = (endMin - startMin + 24 * 60) % (24 * 60);
+      const windowMinutes = diff === 0 ? 24 * 60 : diff;
+      maxTicks = Math.max(1, Math.round(windowMinutes / TICK_DURATION));
+    } else if (typeof tc.maxTicks === "number" && Number.isFinite(tc.maxTicks)) {
+      maxTicks = Math.max(1, Math.floor(tc.maxTicks));
+    } else {
+      maxTicks = Math.round((12 * 60) / TICK_DURATION);
+    }
+  }
+
+  return { startTime, tickDurationMinutes: TICK_DURATION, maxTicks, displayFormat };
+}
+
+function normalizeMultiDayConfig(rawMultiDay, sceneType, startTime) {
+  const md = rawMultiDay && typeof rawMultiDay === "object" ? rawMultiDay : {};
+  const enabled =
+    typeof md.enabled === "boolean" ? md.enabled : sceneType === "open";
+  const dayTransitionText =
+    typeof md.dayTransitionText === "string" ? md.dayTransitionText : "";
+  const nextDayStartTime = sceneType === "open" ? startTime : "00:00";
+
+  return { enabled, dayTransitionText, nextDayStartTime };
+}
+
 export function normalizeWorldDesign(rawDesign) {
   const rawRegions = Array.isArray(rawDesign?.regions)
     ? rawDesign.regions
@@ -218,8 +268,19 @@ export function normalizeWorldDesign(rawDesign) {
       }))
     : deriveLocationsFromRegions(regions);
 
+  const sceneType = rawDesign?.sceneType === "open" ? "open" : "closed";
+  const timeConfig = normalizeTimeConfig(rawDesign?.timeConfig, sceneType);
+  const multiDay = normalizeMultiDayConfig(
+    rawDesign?.multiDay,
+    sceneType,
+    timeConfig.startTime,
+  );
+
   return {
     ...rawDesign,
+    sceneType,
+    timeConfig,
+    multiDay,
     regions,
     interactiveElements,
     characters,

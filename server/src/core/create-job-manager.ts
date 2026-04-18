@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { spawn, ChildProcess } from "node:child_process";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,9 @@ const __dirname = path.dirname(__filename);
 // `server/src/core` is 3 levels below WorldSpark root.
 const WORLDSPARK_ROOT = path.resolve(__dirname, "../../..");
 const ORCHESTRATOR_ENTRY = path.join(WORLDSPARK_ROOT, "orchestrator/src/index.mjs");
+const GENERATED_WORLDS_DIR = path.join(WORLDSPARK_ROOT, "output/worlds");
+const JOB_LOG_DIRNAME = "logs";
+const JOB_LOG_FILENAME = "generation.log";
 
 const HARD_TIMEOUT_MS = parseInt(process.env.CREATE_JOB_HARD_TIMEOUT_MS || `${30 * 60 * 1000}`, 10);
 const MAX_EVENT_BUFFER = 500;
@@ -56,6 +60,8 @@ interface ActiveJob {
   error: string | null;
   events: JobEvent[];
   logTail: string[];
+  pendingPersistedLogs: Array<{ stream: "stdout" | "stderr"; line: string }>;
+  persistedLogPath: string | null;
   hardTimeoutHandle: NodeJS.Timeout | null;
 }
 
@@ -96,6 +102,36 @@ class CreateJobManager extends EventEmitter {
   getHistory(jobId: string): JobEvent[] {
     const job = this.getJob(jobId);
     return job ? [...job.events] : [];
+  }
+
+  cancelJob(jobId: string): void {
+    const job = this.getJob(jobId);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    if (job.status !== "running") {
+      throw new Error("Job is not running");
+    }
+
+    this.recordEvent(job, {
+      kind: "log",
+      at: Date.now(),
+      stream: "stderr",
+      line: "[CreateJobManager] Generation cancelled by user.",
+    });
+    try {
+      job.child.kill("SIGTERM");
+      setTimeout(() => {
+        try {
+          if (!job.child.killed) job.child.kill("SIGKILL");
+        } catch {
+          // Ignore kill errors during shutdown.
+        }
+      }, 5000).unref();
+    } catch {
+      // Ignore kill errors.
+    }
+    this.finishError(job, "Generation stopped by user");
   }
 
   startJob(params: { prompt: string; sizeK: 1 | 2 | 4 }): { jobId: string } {
@@ -142,6 +178,8 @@ class CreateJobManager extends EventEmitter {
       error: null,
       events: [],
       logTail: [],
+      pendingPersistedLogs: [],
+      persistedLogPath: null,
       hardTimeoutHandle: null,
     };
 
@@ -217,9 +255,49 @@ class CreateJobManager extends EventEmitter {
       job.logTail.splice(0, job.logTail.length - MAX_LOG_BUFFER);
     }
 
+    if (job.persistedLogPath) {
+      this.appendPersistedLogEntry(job.persistedLogPath, stream, line);
+    } else {
+      job.pendingPersistedLogs.push({ stream, line });
+      if (job.pendingPersistedLogs.length > MAX_LOG_BUFFER) {
+        job.pendingPersistedLogs.splice(0, job.pendingPersistedLogs.length - MAX_LOG_BUFFER);
+      }
+      this.maybeInitializePersistedLog(job, line);
+    }
+
     this.recordEvent(job, { kind: "log", at: Date.now(), stream, line });
 
     this.parseProgress(job, line);
+  }
+
+  private maybeInitializePersistedLog(job: ActiveJob, line: string) {
+    if (job.persistedLogPath) return;
+    const worldIdMatch = line.match(/^World ID:\s+(world_[^\s]+)/);
+    const worldId = worldIdMatch?.[1];
+    if (!worldId) return;
+
+    try {
+      const logsDir = path.join(GENERATED_WORLDS_DIR, worldId, JOB_LOG_DIRNAME);
+      mkdirSync(logsDir, { recursive: true });
+      const logPath = path.join(logsDir, JOB_LOG_FILENAME);
+      writeFileSync(
+        logPath,
+        [
+          `=== WorldSpark Generation Log — ${new Date(job.startedAt).toISOString()} ===`,
+          `Job ID: ${job.jobId}`,
+          `World ID: ${worldId}`,
+          `Prompt: ${job.prompt}`,
+          "",
+        ].join("\n"),
+      );
+      job.persistedLogPath = logPath;
+      for (const entry of job.pendingPersistedLogs) {
+        this.appendPersistedLogEntry(logPath, entry.stream, entry.line);
+      }
+      job.pendingPersistedLogs = [];
+    } catch {
+      // Do not break generation if log persistence fails.
+    }
   }
 
   private parseProgress(job: ActiveJob, line: string) {
@@ -346,12 +424,12 @@ class CreateJobManager extends EventEmitter {
     if (job.status !== "running") return;
     job.status = "error";
     job.finishedAt = Date.now();
-    job.error = message;
+    job.error = this.withLogHint(message, job.worldId);
     this.clearHardTimeout(job);
     this.recordEvent(job, {
       kind: "job_error",
       at: job.finishedAt,
-      message,
+      message: job.error,
       tail: job.logTail.slice(-30),
     });
   }
@@ -369,6 +447,23 @@ class CreateJobManager extends EventEmitter {
       job.events.splice(0, job.events.length - MAX_EVENT_BUFFER);
     }
     this.emit("event", job.jobId, event);
+  }
+
+  private appendPersistedLogEntry(
+    logPath: string,
+    stream: "stdout" | "stderr",
+    line: string,
+  ) {
+    try {
+      appendFileSync(logPath, `[${new Date().toISOString()}] [${stream}] ${line}\n`);
+    } catch {
+      // Do not break generation if log persistence fails.
+    }
+  }
+
+  private withLogHint(message: string, worldId: string | null): string {
+    if (!worldId) return message;
+    return `${message}. Check logs in output/worlds/${worldId}/${JOB_LOG_DIRNAME}/`;
   }
 }
 

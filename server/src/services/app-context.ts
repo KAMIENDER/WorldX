@@ -10,6 +10,7 @@ import { initDatabase } from "../store/db.js";
 import { getDb } from "../store/db.js";
 import * as snapshotStore from "../store/snapshot-store.js";
 import { reloadConfigs } from "../utils/config-loader.js";
+import type { SceneConfig } from "../types/index.js";
 
 export class AppContext {
   worldManager!: WorldManager;
@@ -23,6 +24,7 @@ export class AppContext {
   eventBus = new EventEmitter();
 
   private worldDirPath?: string;
+  private sceneConfigOverride: Partial<SceneConfig> | null = null;
 
   private _initialized = false;
 
@@ -54,6 +56,17 @@ export class AppContext {
 
   switchWorld(worldDirPath: string): void {
     this.worldDirPath = worldDirPath;
+    this.clearPersistedState();
+    reloadConfigs();
+    this.rebuildRuntime();
+    this.eventBus.emit("simulation_status", { status: "idle" });
+  }
+
+  setDevTickDurationMinutes(minutes: number): void {
+    this.sceneConfigOverride = {
+      ...(this.sceneConfigOverride ?? {}),
+      tickDurationMinutes: minutes,
+    };
     this.clearPersistedState();
     reloadConfigs();
     this.rebuildRuntime();
@@ -92,6 +105,9 @@ export class AppContext {
   private rebuildRuntime(): void {
     this.worldManager = new WorldManager();
     this.worldManager.initialize(this.worldDirPath);
+    if (this.sceneConfigOverride) {
+      this.worldManager.applySceneConfigOverride(this.sceneConfigOverride);
+    }
 
     this.characterManager = new CharacterManager(this.worldManager);
     this.characterManager.initialize();

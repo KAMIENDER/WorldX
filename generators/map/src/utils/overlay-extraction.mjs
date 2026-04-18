@@ -26,10 +26,13 @@ export function chunkArray(array, size) {
  * @returns {Promise<Array<{ id: string, name: string, type?: string, topLeft: {x:number,y:number}, bottomRight: {x:number,y:number} }>>}
  */
 export async function extractRegionBoxesFromMarkedImage(originalBuffer, markedBuffer, colorAssignments) {
+  const { width: originalWidth, height: originalHeight } = await getImageSize(originalBuffer);
   const { width, height } = await getImageSize(markedBuffer);
   const blockSize = width <= 1500 ? 4 : width <= 3000 ? 6 : 8;
   const gridWidth = Math.floor(width / blockSize);
   const gridHeight = Math.floor(height / blockSize);
+  const scaleX = originalWidth / width;
+  const scaleY = originalHeight / height;
 
   const originalRaw = await sharp(originalBuffer)
     .resize(width, height, { fit: "fill" })
@@ -103,8 +106,14 @@ export async function extractRegionBoxesFromMarkedImage(originalBuffer, markedBu
         id: region.id,
         name: region.name,
         type: region.type,
-        topLeft: bbox.topLeft,
-        bottomRight: bbox.bottomRight,
+        topLeft: {
+          x: Math.max(0, Math.min(originalWidth, Math.round(bbox.topLeft.x * scaleX))),
+          y: Math.max(0, Math.min(originalHeight, Math.round(bbox.topLeft.y * scaleY))),
+        },
+        bottomRight: {
+          x: Math.max(0, Math.min(originalWidth, Math.round(bbox.bottomRight.x * scaleX))),
+          y: Math.max(0, Math.min(originalHeight, Math.round(bbox.bottomRight.y * scaleY))),
+        },
       };
     })
     .filter(Boolean);

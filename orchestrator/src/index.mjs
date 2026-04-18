@@ -30,6 +30,8 @@ async function main() {
   const worldId = `world_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`;
   const worldDir = join(ROOT, "output/worlds", worldId);
   mkdirSync(worldDir, { recursive: true });
+  const logsDir = join(worldDir, "logs");
+  mkdirSync(logsDir, { recursive: true });
 
   console.log("\n╔══════════════════════════════════════════════╗");
   console.log("║         WorldSeed: One Sentence, One World       ║");
@@ -53,6 +55,7 @@ async function main() {
     generateMapAssets({
       mapDir,
       worldDir,
+      logsDir,
       mapScript,
       mapDescription: worldDesign.mapDescription,
     }),
@@ -81,13 +84,15 @@ async function main() {
   console.log();
 }
 
-async function generateMapAssets({ mapDir, worldDir, mapScript, mapDescription }) {
+async function generateMapAssets({ mapDir, worldDir, logsDir, mapScript, mapDescription }) {
   console.log("\n━━━ Phase 2: Generating Map ━━━");
 
   try {
     await runNodeScript(mapScript, [mapDescription], {
       env: {
         MAP_OUTPUT_DIR: mapDir,
+        MAP_LOG_DIR: logsDir,
+        MAP_LOG_FILE_NAME: "map-pipeline.log",
         WORLD_DESIGN_PATH: join(worldDir, "world-design.json"),
       },
       timeoutMs: MAP_GENERATION_TIMEOUT_MS,

@@ -56,6 +56,17 @@ router.get("/jobs/:jobId", (req, res) => {
   res.json(snapshot);
 });
 
+router.post("/jobs/:jobId/cancel", (req, res) => {
+  try {
+    createJobManager.cancelJob(String(req.params.jobId));
+    res.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message === "Job not found" ? 404 : 409;
+    res.status(status).json({ error: message });
+  }
+});
+
 router.get("/jobs/:jobId/events", (req: Request, res: Response) => {
   const jobId = String(req.params.jobId);
   const snapshot = createJobManager.getSnapshot(jobId);

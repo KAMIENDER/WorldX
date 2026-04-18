@@ -7,6 +7,7 @@ import {
 } from "../config/game-config";
 
 type FacingDirection = "down" | "up" | "left" | "right";
+const WALK_SPEED_BODY_HEIGHT_RATIO = 1.1;
 
 export interface MovementAnchor {
   x: number;
@@ -33,6 +34,11 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
   private bubbleBg!: Phaser.GameObjects.Graphics;
   private bubbleText!: Phaser.GameObjects.Text;
   private bubbleHideTimer: Phaser.Time.TimerEvent | null = null;
+  private currentBubbleVerticalSpan = 0;
+  private osBubbleContainer!: Phaser.GameObjects.Container;
+  private osBubbleBg!: Phaser.GameObjects.Graphics;
+  private osBubbleText!: Phaser.GameObjects.Text;
+  private osBubbleHideTimer: Phaser.Time.TimerEvent | null = null;
   private moveTween: Phaser.Tweens.Tween | null = null;
   private idleTween: Phaser.Tweens.Tween | null = null;
   private walkTween: Phaser.Tweens.Tween | null = null;
@@ -88,10 +94,8 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
       this.createCircleBody(color);
     }
 
-    this.bubbleContainer = this.scene.add.container(
-      0,
-      this.hasSprite ? this.displayMetrics.bubbleOffsetY : -this.displayMetrics.circleRadius * 4.2,
-    );
+    const bubbleAnchorOffsetY = this.getBubbleAnchorOffsetY();
+    this.bubbleContainer = this.scene.add.container(0, bubbleAnchorOffsetY);
     this.bubbleBg = this.scene.add.graphics();
     this.bubbleText = this.scene.add
       .text(0, 0, "", {
@@ -106,12 +110,30 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
 
     this.bubbleContainer.add([this.bubbleBg, this.bubbleText]);
     this.bubbleContainer.setVisible(false);
+
+    this.osBubbleContainer = this.scene.add.container(0, bubbleAnchorOffsetY);
+    this.osBubbleBg = this.scene.add.graphics();
+    this.osBubbleText = this.scene.add
+      .text(0, 0, "", {
+        fontSize: `${this.displayMetrics.bubbleFontSize * 0.9}px`,
+        color: "#444444",
+        fontFamily: "'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif",
+        fontStyle: "italic",
+        wordWrap: { width: this.displayMetrics.bubbleWrapWidth, useAdvancedWrap: true },
+        resolution: 2,
+      })
+      .setOrigin(0.5, 1);
+    this.osBubbleContainer.add([this.osBubbleBg, this.osBubbleText]);
+    this.osBubbleContainer.setVisible(false);
+    this.updateOsBubblePosition();
+
     this.createDomLabel();
 
     this.add([
       this.shadow,
       this.bodyContainer,
       this.bubbleContainer,
+      this.osBubbleContainer,
     ]);
 
     this.syncOverlayZoom(this.scene.cameras.main.zoom);
@@ -146,6 +168,7 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
     this.nameEl = name;
     this.actionIconEl = icon;
     this.updateDomLabelStyle();
+    this.updateDomLabelVisibility();
     this.updateDomLabelPosition();
   }
 
@@ -294,7 +317,7 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
       }
       const target = path[index];
       const dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
-      const speed = 90;
+      const speed = this.getWalkSpeed();
       const duration = Math.max(50, (dist / speed) * 1000);
 
       if (this.hasSprite) {
@@ -377,6 +400,7 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
     const w = textW + pad * 2;
     const h = textH + pad * 2;
     const shadowOffset = Math.max(1, pad * 0.22);
+    this.currentBubbleVerticalSpan = h + tailH;
 
     this.bubbleBg.clear();
     this.bubbleBg.fillStyle(0x000000, 0.12);
@@ -400,22 +424,55 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
     this.bubbleText.setY(-tailH - pad);
 
     this.bubbleContainer.setVisible(true);
+    this.updateDomLabelVisibility();
+    this.updateOsBubblePosition();
     this.bubbleHideTimer = this.scene.time.delayedCall(duration, () => {
       this.bubbleContainer.setVisible(false);
+      this.currentBubbleVerticalSpan = 0;
+      this.updateDomLabelVisibility();
+      this.updateOsBubblePosition();
       this.bubbleHideTimer = null;
     });
   }
 
   showMonologue(text: string): void {
-    this.showBubble(text, 4000, {
-      fontStyle: "italic",
-      color: "#666666",
-    });
-    this.scene.time.delayedCall(4000, () => {
-      this.applyBubbleTextStyle({
-        fontStyle: "bold",
-        color: "#222222",
-      });
+    if (this.osBubbleHideTimer) {
+      this.osBubbleHideTimer.remove(false);
+      this.osBubbleHideTimer = null;
+    }
+    const duration = 7000;
+    this.osBubbleText.setText(text);
+    this.osBubbleText.updateText();
+    const textW = this.osBubbleText.width;
+    const textH = this.osBubbleText.height;
+    const pad = this.displayMetrics.bubblePadding;
+    const tailH = this.displayMetrics.bubbleTailHeight + 4;
+    const w = textW + pad * 2;
+    const h = textH + pad * 2;
+    const shadowOffset = Math.max(1, pad * 0.22);
+
+    this.osBubbleBg.clear();
+    
+    const cr = this.displayMetrics.bubbleCornerRadius * 1.8;
+    
+    this.osBubbleBg.fillStyle(0x000000, 0.12);
+    this.osBubbleBg.fillRoundedRect(-w / 2 + shadowOffset, -h - tailH + shadowOffset, w, h, cr);
+    this.osBubbleBg.fillStyle(0xffffff, 0.95);
+    this.osBubbleBg.fillRoundedRect(-w / 2, -h - tailH, w, h, cr);
+    
+    this.osBubbleBg.fillCircle(4, -tailH + 2, 4.5);
+    this.osBubbleBg.fillCircle(-2, -tailH + 11, 3);
+    this.osBubbleBg.fillCircle(2, -tailH + 18, 2);
+
+    this.osBubbleText.setY(-tailH - pad);
+
+    this.updateOsBubblePosition();
+    this.osBubbleContainer.setVisible(true);
+    this.updateDomLabelVisibility();
+    this.osBubbleHideTimer = this.scene.time.delayedCall(duration, () => {
+      this.osBubbleContainer.setVisible(false);
+      this.updateDomLabelVisibility();
+      this.osBubbleHideTimer = null;
     });
   }
 
@@ -423,6 +480,22 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
     if (!this.actionIconEl) return;
     this.actionIconEl.textContent = emoji;
     this.actionIconEl.style.display = emoji ? "inline-block" : "none";
+  }
+
+  clearTransientUi(): void {
+    if (this.bubbleHideTimer) {
+      this.bubbleHideTimer.remove(false);
+      this.bubbleHideTimer = null;
+    }
+    if (this.osBubbleHideTimer) {
+      this.osBubbleHideTimer.remove(false);
+      this.osBubbleHideTimer = null;
+    }
+    this.bubbleContainer.setVisible(false);
+    this.osBubbleContainer.setVisible(false);
+    this.currentBubbleVerticalSpan = 0;
+    this.updateDomLabelVisibility();
+    this.updateOsBubblePosition();
   }
 
   syncOverlayZoom(cameraZoom: number): void {
@@ -449,6 +522,12 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
     this.actionIconEl.style.fontSize = `${iconSize}px`;
   }
 
+  private updateDomLabelVisibility(): void {
+    if (!this.labelRoot) return;
+    const yieldToBubble = this.bubbleContainer?.visible || this.osBubbleContainer?.visible;
+    this.labelRoot.style.visibility = yieldToBubble ? "hidden" : "visible";
+  }
+
   private applyBubbleTextStyle(overrides: Phaser.Types.GameObjects.Text.TextStyle): void {
     this.bubbleText.setStyle({
       fontSize: `${this.displayMetrics.bubbleFontSize}px`,
@@ -459,6 +538,19 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
       resolution: 2,
       ...overrides,
     });
+  }
+
+  private getBubbleAnchorOffsetY(): number {
+    return this.hasSprite ? this.displayMetrics.bubbleOffsetY : -this.displayMetrics.circleRadius * 4.2;
+  }
+
+  private updateOsBubblePosition(): void {
+    const baseY = this.getBubbleAnchorOffsetY();
+    const stackedGap = Math.max(10, this.displayMetrics.bubblePadding * 0.75);
+    const nextY = this.bubbleContainer.visible
+      ? baseY - this.currentBubbleVerticalSpan - stackedGap
+      : baseY;
+    this.osBubbleContainer.setY(nextY);
   }
 
   private updateDomLabelPosition(): void {
@@ -477,6 +569,7 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
       screenY <= camera.height + 120;
 
     this.labelRoot.style.display = visible ? "flex" : "none";
+    this.updateDomLabelVisibility();
     if (!visible) return;
 
     // screenY is the container origin = roughly the character's feet.
@@ -498,6 +591,10 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
       return h * originY * 0.85;
     }
     return (this.bodyCircle?.radius ?? this.displayMetrics.circleRadius) + this.displayMetrics.circleRadius * 0.1;
+  }
+
+  private getWalkSpeed(): number {
+    return Math.max(48, this.getWorldBodyHeight() * WALK_SPEED_BODY_HEIGHT_RATIO);
   }
 
   private startWalkingAnimation(): void {
@@ -551,6 +648,8 @@ export class CharacterSprite extends Phaser.GameObjects.Container {
   override destroy(fromScene?: boolean): void {
     this.bubbleHideTimer?.remove(false);
     this.bubbleHideTimer = null;
+    this.osBubbleHideTimer?.remove(false);
+    this.osBubbleHideTimer = null;
     this.labelRoot?.remove();
     this.labelRoot = null;
     this.mbtiEl = null;

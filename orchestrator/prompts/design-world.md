@@ -6,15 +6,18 @@
 
 - `worldName`（字符串）：简短且有画面感的名称，语言与用户输入一致
 - `worldDescription`（字符串）：2–3 句话，用于 UI 展示
-- `mapDescription`（字符串）：**必须使用英文**，详细描述地图生成所需的视觉信息——布局、区域、建筑/物体、美术风格/渲染提示、色彩方案、俯视视角。整个场景应为一个完整的画面，大约一屏的范围（一条街、一个房间、一个甲板等）
-- `sceneType`（字符串）：`"closed"` 或 `"open"`。closed：角色无法离开该空间，时间应为持续流动的。open：世界仅在活跃时段存在，应有明确的时间窗口
-- `timeConfig`（对象）：`startTime`（HH:MM）、`tickDurationMinutes`（15、20 或 30）、`maxTicks`（数字或 null；**closed 世界必须为 `null`；open 世界必须为有限数字**）、`displayFormat`（`"modern"`、`"ancient_chinese"` 或 `"fantasy"`）
-- `multiDay`（对象）：`enabled`（布尔值）、`dayTransitionText`（字符串）、`nextDayStartTime`（HH:MM）
+- `mapDescription`（字符串）：遵循用户要求，用 1–3 句话精炼地介绍这是什么地图（如：“宋朝夜市，石板主街纵贯画面，两侧排布摊位与临街建筑”）。**严禁出现以下内容**：任何人物/角色/行人——地图绝对不能有人；任何 3D/透视/等距语言（等距、N层楼、耸立、纵深等）——只描述正上方俯视下的样貌；任何动态效果
+- `sceneType`（字符串）：`"closed"` 或 `"open"`。closed：时间 24 小时循环，永不"打烊"，适合太空站、密室、海上漂流船等没有营业时段概念的封闭空间。open：世界仅在活跃时段存在，到了关门/散场时间即转场，适合有明确运营/活跃时段的场景（夜市、集市、酒吧、学校等）
+- `timeConfig`（对象）：
+  - `startTime`（HH:MM）：故事开始的时间点。对于 closed 世界，这是整个故事的起始时刻；对于 open 世界，这既是首幕的起始时刻，也是每次转场后新一幕的起始时刻
+  - `endTime`（HH:MM，**仅 open 世界需要**）：每一幕结束的时间点。到达此时间后触发转场。例如夜市 `startTime: "19:00"`, `endTime: "02:00"` 表示每幕从晚7点持续到凌晨2点。**closed 世界不需要此字段**
+  - `displayFormat`（`"modern"`、`"ancient_chinese"` 或 `"fantasy"`）
+- `multiDay`（对象）：`enabled`（布尔值）、`dayTransitionText`（字符串，转场时显示的文案）
 - `mapPlan`（对象）：
   - `buildingMode`（`"mostly_enterable"` | `"mostly_scenic"`）
-  - `compositionNotes`（字符串）：语言与用户输入一致，概述地图构图要点
-  - `worldFunctionSummary`（字符串）：语言与用户输入一致，概述整个场景的全局功能
-  - `regionDesignNotes`（字符串）：语言与用户输入一致，概述各区域的外观与连接方式
+  - `compositionNotes`（字符串）：一句话，概述地图俯视平面构图要点（如"左侧建筑群、中间街道、右侧广场"）
+  - `worldFunctionSummary`（字符串）：一句话，概述整个场景的全局功能
+  - `regionDesignNotes`（字符串）：一句话，概述各区域的平面位置关系与连通方式
 - `worldActions`（数组）：1–6 项。这些是全场景通用的动作，在任意位置均可使用。每个世界至少包含一个有意义的全局动作。每项包含：
   - `id`（snake_case，英文）
   - `name`（语言与用户输入一致）
@@ -24,22 +27,22 @@
 - `regions`（数组）：0–8 项（与 `interactiveElements` 合计不超过 8 项）。这些是可选的功能区域——角色可以进入并在其中行走的空间（室内房间、广场、花园等）。仅在空间划分确实有助于行为、导航或构图时才添加区域。每项包含：
   - `id`（snake_case，英文）
   - `name`（语言与用户输入一致）
-  - `description`（语言与用户输入一致）
+  - `description`（一句话，语言与用户输入一致，概述该区域的功能/氛围）
   - `type`（`"building"` 或 `"outdoor"`）
   - `enterable`（布尔值）
   - `shapeConstraint`（可进入建筑为 `"rectangular"`，其他为 `"flexible"`）
-  - `placementHint`（**必须使用英文**，简短位置描述，如 `"left side"`、`"south end"`、`"center plaza"`）
-  - `visualDescription`（**必须使用英文**，简短描述该区域在地图中的视觉外观）
+  - `placementHint`（2–4 个词的位置描述，如"左侧"、"南端"、"中央广场旁"）
+  - `visualDescription`（≤15 字，描述该区域**从正上方俯视**时的外观特征，不要描述立面/高度/3D 特征）
   - `expectedObjects`（字符串数组）
-  - `interactions`（对象数组，包含 `id`、`name`、`description`、`duration`、`effects`）
+  - `interactions`（对象数组，包含 `id`、`name`、`description`、`duration`、`effects`，以及可选的 `requiresAnchor`）
 - `interactiveElements`（数组）：0–8 项（与 `regions` 合计不超过 8 项）。这些是 main_area 中的可交互元素——摊位、水井、告示牌、神龛等，角色走到附近进行交互，但不进入内部。不要将可交互元素放在功能区内。每项包含：
   - `id`（snake_case，英文）
   - `name`（语言与用户输入一致）
-  - `description`（语言与用户输入一致）
-  - `visualDescription`（**必须使用英文**，简短描述该元素在地图中的视觉外观）
-  - `placementHint`（**必须使用英文**，简短位置描述）
-  - `interactions`（对象数组，包含 `id`、`name`、`description`、`duration`、`effects`）
-- `characters`（数组）：1–8 项。每项包含：`name`、`role`、`personality`、`appearance`（**必须使用英文**，描述视觉外观：颜色、发型、服装、配饰）、`motivation`、`socialStyle`、`initialMemories`（字符串数组）。可选填 `anchor`（见下方"角色锚定"规则）。当且仅当用户明确提到了知名 IP 角色时，才可选填 `iconicCues` 和 `canonicalRefs`（详见下方"角色鲜活度"规则）。
+  - `description`（一句话，语言与用户输入一致，概述该元素的功能）
+  - `visualDescription`（≤15 字，描述该元素**从正上方俯视**时的外观特征）
+  - `placementHint`（2–4 个词的位置描述）
+  - `interactions`（对象数组，包含 `id`、`name`、`description`、`duration`、`effects`，以及可选的 `requiresAnchor`）
+- `characters`（数组）：1–8 项。每项包含：`name`、`role`、`personality`、`appearance`（语言与用户输入一致，描述视觉外观：身份/职业关键词 + 发型、服装、配饰、颜色。**必须包含用户原文中的身份关键词**，如用户说"捕快"则 appearance 中必须出现"捕快"）、`motivation`、`socialStyle`、`initialMemories`（字符串数组）。可选填 `anchor`（见下方"角色锚定"规则）。当且仅当用户明确提到了知名 IP 角色时，才可选填 `iconicCues` 和 `canonicalRefs`（详见下方"角色鲜活度"规则）。
   - `anchor`（可选对象）：`{ "type": "region" | "element", "targetId": "对应的 region 或 interactiveElement 的 id" }`。省略则为自由行走角色
   - `iconicCues`（可选对象）：`speechQuirks`（字符串数组——结构性说话习惯，不是口头禅；如"总以试探性反问回应别人，以此让对方先亮出底牌"）、`catchphrases`（数组，最多 2 条标志性台词）、`behavioralTics`（字符串数组——可反复出现的小动作/行为习惯）
   - `canonicalRefs`（可选对象）：`source`（原作 IP 名称）、`keyRelationships`（字符串数组——原作中对该角色最重要的人及关系）、`signatureMoments`（1–2 条字符串——定义该角色的关键时刻，作为其"心结"或执念，用作触发器而非表演素材）
@@ -50,24 +53,22 @@
 {
   "worldName": "示例",
   "worldDescription": "两到三句话的描述。",
-  "mapDescription": "English, top-down 16:9 game map scene matching the requested style...",
-  "sceneType": "closed",
+  "mapDescription": "正上方俯视的灯笼夜市街。青石板主街从左到右横贯画面，两侧排列木制摊位。暖橙色调，工笔画风格。",
+  "sceneType": "open",
   "timeConfig": {
-    "startTime": "08:00",
-    "tickDurationMinutes": 15,
-    "maxTicks": null,
+    "startTime": "19:00",
+    "endTime": "02:00",
     "displayFormat": "modern"
   },
   "multiDay": {
-    "enabled": false,
-    "dayTransitionText": "",
-    "nextDayStartTime": "08:00"
+    "enabled": true,
+    "dayTransitionText": "夜幕降临，街道重新热闹起来……"
   },
   "mapPlan": {
-    "buildingMode": "mostly_enterable",
-    "compositionNotes": "主视觉集中在中央街道和两侧功能区。",
-    "worldFunctionSummary": "整个小镇都适合闲逛、观察和社交。",
-    "regionDesignNotes": "功能区要彼此清晰分隔，但道路连通。"
+    "buildingMode": "mostly_scenic",
+    "compositionNotes": "中央主街横贯左右，摊位沿街两侧分布。",
+    "worldFunctionSummary": "夜市街，闲逛、品尝小吃和社交。",
+    "regionDesignNotes": "左侧当铺为可进入建筑，其余均为路边摊/户外。"
   },
   "worldActions": [
     {
@@ -88,8 +89,8 @@
       "type": "building",
       "enterable": true,
       "shapeConstraint": "rectangular",
-      "placementHint": "left side",
-      "visualDescription": "Warm wooden interior with shelves and a service counter.",
+      "placementHint": "左侧",
+      "visualDescription": "俯视无顶木屋，内有货架和柜台",
       "expectedObjects": ["counter", "shelf"],
       "interactions": [
         {
@@ -109,16 +110,27 @@
       "id": "example_stall",
       "name": "示例摊位",
       "description": "一个卖小吃的摊位。",
-      "visualDescription": "A small wooden food stall with a red awning and steaming pots.",
-      "placementHint": "center of the street",
+      "visualDescription": "俯视小木摊，红布顶棚",
+      "placementHint": "街道中央",
       "interactions": [
         {
           "id": "buy_snack",
           "name": "买小吃",
           "description": "从摊位购买一份小吃。",
+          "requiresAnchor": true,
           "duration": 1,
           "effects": [
             { "type": "character_need", "need": "curiosity", "delta": 5 }
+          ]
+        },
+        {
+          "id": "look_at_menu",
+          "name": "看看菜单",
+          "description": "站在摊位前看看有什么好吃的。",
+          "requiresAnchor": false,
+          "duration": 1,
+          "effects": [
+            { "type": "character_need", "need": "curiosity", "delta": 3 }
           ]
         }
       ]
@@ -129,7 +141,7 @@
       "name": "名字",
       "role": "角色定位",
       "personality": "性格特征、说话方式、价值观、恐惧。",
-      "appearance": "English character appearance description with specific colors.",
+      "appearance": "北宋捕快，黑色官帽，深褐色公服，腰挂佩刀，黑布靴。",
       "motivation": "在这个世界中的驱动力。",
       "socialStyle": "introvert/extrovert/ambivert 以及互动方式。",
       "anchor": { "type": "element", "targetId": "example_stall" },
@@ -167,11 +179,13 @@
 - 每个角色必须有独特的性格，以产生有趣的互动
 - 思考哪些角色之间会自然产生冲突或羁绊
 - 区域和全局动作应与主题相符
-- `appearance` 必须使用英文，包含具体的颜色、发型、服装和配饰，足够清晰以用于角色精灵图生成
-- `mapDescription`、`placementHint` 和 `visualDescription` 必须使用英文
+- `appearance` 语言与用户输入一致，**必须保留用户原文中的身份/职业关键词**（如"捕快"、"书生"、"骑士"），再补充发型、服装颜色、配饰等视觉细节
+- `mapDescription`、`placementHint` 和 `visualDescription` **严格以正上方俯视（top-down）视角描述平面外观**。禁止出现：3D/透视/等距语言、人物/行人、动态效果
+- 所有 `description` 字段保持精简，每个不超过一句话
 - 世界必须有整体感；命名应与世界的文化背景匹配
-- 如果 `sceneType` 为 `open`，请选择一个明确的活跃时间窗口，并使 `maxTicks` 与之匹配。例如：20:00 到 02:00，每 tick 15 分钟 = 24 ticks
-- 如果 `sceneType` 为 `closed`，`maxTicks` 保持为 `null`；世界应感觉是持续进行的，而非有固定时段
+- **`sceneType` 选择至关重要**：凡是现实中有"营业时间"/"活跃时段"/"开门关门"概念的场景，都应该用 `open`——夜市（19:00–02:00）、早餐店（06:00–10:00）、学校（08:00–17:00）、酒吧（21:00–03:00）、集市、庙会等。只有那些角色无法离开、没有自然作息周期的封闭空间才用 `closed`——太空站、密室逃脱、海上漂流、地下实验室等
+- 如果 `sceneType` 为 `open`，必须设置 `endTime`，代表每幕结束的时间。`startTime` 既是首幕的起始时间，也是转场后新一幕的起始时间。例如夜市 `startTime: "19:00"`, `endTime: "02:00"`
+- 如果 `sceneType` 为 `closed`，不要设置 `endTime`；世界以 24 小时为一个周期自动循环，`startTime` 是故事的起始时刻
 - 如果用户明确要求了某种视觉风格（如像素风、水彩、动漫背景、写实、low-poly 微缩模型、手绘等），请在 `mapDescription` 中体现该风格，而不是默认使用像素风
 - 如果用户未指定视觉风格，请选择一种整体协调、易于辨识的游戏地图风格，适合近俯视单场景布局
 
@@ -183,6 +197,7 @@
 - 如果场景中有摊贩/店主类角色需要留在某个摊位旁，应将摊位设为 interactiveElement，并给该角色设置 `anchor: { "type": "element", "targetId": "摊位id" }`
 - 如果某个角色需要一直待在某个房间内（如店主待在自己的店里），应给该角色设置 `anchor: { "type": "region", "targetId": "房间id" }`
 - 自由行走的角色（旅行者、巡逻的守卫、普通居民等）不需要设置 anchor
+- 当一个 region 或 interactiveElement 有锚定角色时，其 interactions 中**需要与锚定角色面对面才能完成**的动作应标注 `"requiresAnchor": true`（如"买炊饼"需要和摊主交易、"典当物品"需要和掌柜沟通），运行时这些动作会自动转化为与锚定角色的对话。**不需要锚定角色参与**的动作标注 `"requiresAnchor": false` 或省略（如"浏览典当品"、"闻闻炊饼香味"、"看看菜单"），这些仍为普通物件交互
 
 角色鲜活度规则（`iconicCues` 和 `canonicalRefs`）：
 

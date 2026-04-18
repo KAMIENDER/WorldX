@@ -22,6 +22,8 @@ const DIALOGUE_SESSION_PREFIX = "dialogue_session:";
 const MAIN_AREA_DIALOGUE_DISTANCE_RATIO = clampRatio(
   parseFloat(process.env.MAIN_AREA_DIALOGUE_DISTANCE_RATIO || "0.4"),
 );
+const MIN_PREFERRED_MAIN_AREA_COMPONENT_SIZE = 6;
+const MIN_PREFERRED_MAIN_AREA_COMPONENT_RATIO = 0.5;
 
 export interface TickAdvanceResult {
   previousTime: GameTime;
@@ -75,6 +77,12 @@ export class WorldManager {
 
   getSceneConfig(): SceneConfig {
     return this.sceneConfig;
+  }
+
+  applySceneConfigOverride(override: Partial<SceneConfig>): void {
+    this.sceneConfig = mergeSceneConfigOverride(this.sceneConfig, override);
+    const restoredTime = this.restorePersistedTime();
+    this.syncSceneClock(restoredTime.day);
   }
 
   getCurrentTime(): GameTime {
@@ -207,9 +215,29 @@ export class WorldManager {
     if (points.length === 0) return null;
 
     const free = points.filter((p) => !occupied.has(p.id));
-    const pool = free.length > 0 ? free : points;
-    const index = Math.abs(hashString(seed)) % pool.length;
-    return pool[index]?.id ?? null;
+    if (free.length === 0) {
+      const index = Math.abs(hashString(seed)) % points.length;
+      return points[index]?.id ?? null;
+    }
+    if (occupied.size === 0) {
+      const index = Math.abs(hashString(seed)) % free.length;
+      return free[index]?.id ?? null;
+    }
+
+    const occupiedPoints = points.filter((point) => occupied.has(point.id));
+    if (occupiedPoints.length === 0) {
+      const index = Math.abs(hashString(seed)) % free.length;
+      return free[index]?.id ?? null;
+    }
+
+    const ranked = [...free].sort((a, b) => {
+      const minDistA = Math.min(...occupiedPoints.map((occupiedPoint) => distanceBetweenPoints(a, occupiedPoint)));
+      const minDistB = Math.min(...occupiedPoints.map((occupiedPoint) => distanceBetweenPoints(b, occupiedPoint)));
+      return minDistB - minDistA;
+    });
+    const preferredPool = ranked.slice(0, Math.max(1, Math.ceil(ranked.length * 0.4)));
+    const index = Math.abs(hashString(seed)) % preferredPool.length;
+    return preferredPool[index]?.id ?? ranked[0]?.id ?? null;
   }
 
   pickDistantMainAreaPointId(currentPointId: string | null | undefined, seed: string): string | null {
@@ -248,6 +276,15 @@ export class WorldManager {
 
   getWorldActions(): WorldActionConfig[] {
     return this.worldActions;
+  }
+
+  resetTransientStateForNewScene(): void {
+    for (const objectState of worldState.getAllObjectStates()) {
+      if (objectState.currentUsers.length === 0) continue;
+      worldState.updateObjectState(objectState.objectId, {
+        currentUsers: [],
+      });
+    }
   }
 
   private syncSceneClock(sceneDay: number): void {
@@ -526,6 +563,35 @@ function normalizeMainAreaPoints(points: MainAreaPointConfig[] | undefined): Mai
   }));
 }
 
+function mergeSceneConfigOverride(base: SceneConfig, override: Partial<SceneConfig>): SceneConfig {
+  const nextTickDuration =
+    typeof override.tickDurationMinutes === "number" && Number.isFinite(override.tickDurationMinutes)
+      ? Math.max(1, Math.floor(override.tickDurationMinutes))
+      : base.tickDurationMinutes;
+  let nextMaxTicks = override.maxTicks ?? base.maxTicks;
+
+  if (
+    override.tickDurationMinutes !== undefined &&
+    override.maxTicks === undefined &&
+    base.sceneType === "open" &&
+    base.maxTicks != null
+  ) {
+    const cycleMinutes = Math.max(1, base.maxTicks) * base.tickDurationMinutes;
+    nextMaxTicks = Math.max(1, Math.round(cycleMinutes / nextTickDuration));
+  }
+
+  return {
+    ...base,
+    ...override,
+    tickDurationMinutes: nextTickDuration,
+    maxTicks: nextMaxTicks,
+    multiDay: {
+      ...base.multiDay,
+      ...override.multiDay,
+    },
+  };
+}
+
 function normalizeWorldSize(size: WorldSizeConfig | undefined): WorldSizeConfig | null {
   if (!size) return null;
   if (!Number.isFinite(size.width) || !Number.isFinite(size.height)) return null;
@@ -631,6 +697,16 @@ function getLargestMainAreaPointComponent(points: MainAreaPointConfig[]): Set<st
     if (!largest || component.size > largest.size) {
       largest = component;
     }
+  }
+
+  if (!largest) return null;
+
+  const componentRatio = largest.size / points.length;
+  if (
+    largest.size < MIN_PREFERRED_MAIN_AREA_COMPONENT_SIZE ||
+    componentRatio < MIN_PREFERRED_MAIN_AREA_COMPONENT_RATIO
+  ) {
+    return null;
   }
 
   return largest;

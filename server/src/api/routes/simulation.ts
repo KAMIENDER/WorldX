@@ -4,6 +4,8 @@ import {
   buildWorldTimeInfo,
   getBatchTicksForOneCycle,
 } from "../../utils/time-helpers.js";
+import * as eventStore from "../../store/event-store.js";
+import { enrichEventTime } from "./events.js";
 
 const router = Router();
 
@@ -20,12 +22,20 @@ router.post("/tick", async (_req, res) => {
     const events = await appContext.simulationEngine.simulateTick();
     const gameTime = appContext.worldManager.getCurrentTime();
     const worldTime = buildWorldTimeInfo(gameTime);
+    const persistedEvents = eventStore
+      .getEventsByIds(events.map((event) => event.id))
+      .map(enrichEventTime);
 
     appContext.eventBus.emit("tick_events", { gameTime, events });
     appContext.eventBus.emit("simulation_status", { status: "idle" });
 
     simStatus = "idle";
-    res.json({ ok: true, gameTime: worldTime, eventCount: events.length });
+    res.json({
+      ok: true,
+      gameTime: worldTime,
+      eventCount: events.length,
+      events: persistedEvents,
+    });
   } catch (err) {
     simStatus = "idle";
     res.status(500).json({ error: String(err) });

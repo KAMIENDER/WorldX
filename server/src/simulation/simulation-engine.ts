@@ -45,8 +45,8 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-const MAX_DIALOGUE_TURNS_PER_TICK = 1;
-const MAX_DIALOGUE_TURNS_PER_SESSION = 6;
+const MAX_DIALOGUE_TURNS_PER_TICK = 2;
+const WORLD_ACTION_TARGET_PREFIX = "world_action:";
 
 type TickIntent = {
   decision: ActionDecision;
@@ -227,16 +227,14 @@ export class SimulationEngine {
   ): Promise<SimulationEvent[]> {
     const events: SimulationEvent[] = [];
 
+    const absNow = absoluteTick(cycleEndTime);
+    events.push(...await this.closeAllActiveDialogues(cycleEndTime, absNow));
+    await this.flushPendingMemoryEvaluation();
+
     const reflectionEvents = await this.runReflection(cycleEndTime);
     events.push(...reflectionEvents);
 
     this.runEndOfDayDecay(cycleEndTime);
-    try {
-      await generateDailySummary(cycleEndTime.day, this.llmClient);
-    } catch (err) {
-      console.error("[SimEngine] Daily summary error:", err);
-    }
-
     try {
       const graphData = generateGraphSnapshot(this.characterManager);
       graphData.generatedAt = cycleEndTime;
@@ -254,7 +252,24 @@ export class SimulationEngine {
     }
 
     this.worldManager.createSnapshot(`Day ${cycleEndTime.day} ended`);
+    this.worldManager.resetTransientStateForNewScene();
+    this.characterManager.resetStatesForNewScene();
+    this.scheduleDailySummary(cycleEndTime.day);
     return events;
+  }
+
+  private async flushPendingMemoryEvaluation(): Promise<void> {
+    try {
+      await this.memoryEvalQueue;
+    } catch (err) {
+      console.error("[SimEngine] Pending memory evaluation flush error:", err);
+    }
+  }
+
+  private scheduleDailySummary(day: number): void {
+    void generateDailySummary(day, this.llmClient).catch((err) => {
+      console.error("[SimEngine] Daily summary error:", err);
+    });
   }
 
   private shouldRunMicroReflectionWave(gameTime: GameTime): boolean {
@@ -593,9 +608,13 @@ export class SimulationEngine {
 
     const stateA = this.characterManager.getState(charA);
     const stateB = this.characterManager.getState(charB);
+    const initiatorProfile = this.characterManager.getProfile(charA);
+    if (!this.canProfileInitiateDialogue(initiatorProfile, stateA.location)) {
+      return false;
+    }
     return (
       !stateA.currentAction &&
-      !stateB.currentAction &&
+      stateB.currentAction !== "in_conversation" &&
       this.areStatesDialogueCompatible(stateA, stateB)
     );
   }
@@ -615,11 +634,18 @@ export class SimulationEngine {
     stateA: { location: string; mainAreaPointId?: string | null },
     stateB: { location: string; mainAreaPointId?: string | null },
   ): boolean {
-    if (stateA.location !== stateB.location) return false;
-    if (stateA.location !== "main_area") return true;
-    return this.worldManager.areMainAreaPointsConversable(
-      stateA.mainAreaPointId ?? null,
-      stateB.mainAreaPointId ?? null,
+    return stateA.location === stateB.location;
+  }
+
+  private canProfileInitiateDialogue(
+    profile: { anchor?: { type: string; targetId: string } },
+    currentLocation: string,
+  ): boolean {
+    if (!profile.anchor) return true;
+    return (
+      profile.anchor.type === "region" &&
+      currentLocation !== "main_area" &&
+      currentLocation === profile.anchor.targetId
     );
   }
 
@@ -631,6 +657,8 @@ export class SimulationEngine {
     absNow: number;
   }): DialogueSession {
     const { initiatorId, responderId, motivation, gameTime, absNow } = params;
+    this.interruptCharacterForDialogue(initiatorId);
+    this.interruptCharacterForDialogue(responderId);
     const session: DialogueSession = {
       id: generateId(),
       participants: [initiatorId, responderId],
@@ -642,7 +670,6 @@ export class SimulationEngine {
       transcript: [],
       turnsThisTick: 0,
       totalTurns: 0,
-      maxTurns: MAX_DIALOGUE_TURNS_PER_SESSION,
       initiatorId,
       motivation,
       tags: [],
@@ -662,6 +689,25 @@ export class SimulationEngine {
       actionEndTick: 0,
     });
     return session;
+  }
+
+  private interruptCharacterForDialogue(charId: string): void {
+    const state = this.characterManager.getState(charId);
+    if (!state.currentAction || state.currentAction === "in_conversation") {
+      return;
+    }
+
+    const targetId = state.currentActionTarget;
+    if (targetId && !targetId.startsWith(WORLD_ACTION_TARGET_PREFIX)) {
+      this.worldManager.characterStopUsingObject(targetId, charId);
+    }
+
+    this.characterManager.updateState(charId, {
+      currentAction: null,
+      currentActionTarget: null,
+      actionStartTick: 0,
+      actionEndTick: 0,
+    });
   }
 
   private async runDialogueSession(
@@ -686,10 +732,7 @@ export class SimulationEngine {
       return events;
     }
 
-    while (
-      workingSession.turnsThisTick < MAX_DIALOGUE_TURNS_PER_TICK &&
-      workingSession.totalTurns < workingSession.maxTurns
-    ) {
+    while (workingSession.turnsThisTick < MAX_DIALOGUE_TURNS_PER_TICK) {
       const generated = await this.dialogueGenerator.generateNextTurn({
         session: workingSession,
         gameTime,
@@ -713,15 +756,8 @@ export class SimulationEngine {
         ),
       );
 
-      if (
-        !generated.shouldContinue ||
-        workingSession.totalTurns >= workingSession.maxTurns
-      ) {
-        workingSession.endReason =
-          generated.endReason ??
-          (workingSession.totalTurns >= workingSession.maxTurns
-            ? "达到本次会话轮数上限"
-            : "自然结束");
+      if (!generated.shouldContinue) {
+        workingSession.endReason = generated.endReason ?? "自然结束";
         const finalDialogue = await this.dialogueGenerator.finalizeDialogueSession({
           session: workingSession,
           gameTime,
@@ -759,6 +795,31 @@ export class SimulationEngine {
         actionEndTick: absNow + idleDuration,
       });
     }
+  }
+
+  private async closeAllActiveDialogues(
+    gameTime: GameTime,
+    absNow: number,
+  ): Promise<SimulationEvent[]> {
+    const events: SimulationEvent[] = [];
+    const sessions = this.reconcileDialogueSessions();
+
+    for (const session of sessions) {
+      try {
+        session.endReason = "一天结束，对话终止";
+        const finalDialogue = await this.dialogueGenerator.finalizeDialogueSession({
+          session,
+          gameTime,
+        });
+        events.push(this.dialogueCompleteToEvent(session, finalDialogue, gameTime));
+        this.finishDialogueSession(session, absNow);
+      } catch (err) {
+        console.error(`[SimEngine] Error closing dialogue ${session.id} at day end:`, err);
+        this.finishDialogueSession(session, absNow);
+      }
+    }
+
+    return events;
   }
 
   private dialogueTurnToEvent(

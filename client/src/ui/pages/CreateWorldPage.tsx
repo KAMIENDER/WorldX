@@ -70,6 +70,7 @@ export function CreateWorldPage({
   const [events, setEvents] = useState<CreateJobEvent[]>([]);
   const [logsOpen, setLogsOpen] = useState(false);
   const [conflictJobId, setConflictJobId] = useState<string | null>(null);
+  const [cancelingJob, setCancelingJob] = useState(false);
   const logBoxRef = useRef<HTMLDivElement | null>(null);
 
   // On mount: if a job is already running, attach to it (covers refresh during generation).
@@ -102,8 +103,10 @@ export function CreateWorldPage({
       });
       setSnapshot((prev) => applyEventToSnapshot(prev, event, jobId));
       if (event.kind === "job_done") {
+        setCancelingJob(false);
         setMode("done");
       } else if (event.kind === "job_error") {
+        setCancelingJob(false);
         setMode("error");
       }
     });
@@ -156,6 +159,7 @@ export function CreateWorldPage({
     try {
       const { jobId: id } = await apiClient.createWorld({ prompt: prompt.trim(), sizeK });
       setJobId(id);
+      setCancelingJob(false);
       setMode("running");
     } catch (err) {
       if (err instanceof JobConflictError) {
@@ -187,7 +191,19 @@ export function CreateWorldPage({
     setJobId(null);
     setSubmitError(null);
     setConflictJobId(null);
+    setCancelingJob(false);
   }, []);
+
+  const onCancelJob = useCallback(async () => {
+    if (!jobId || cancelingJob) return;
+    setCancelingJob(true);
+    try {
+      await apiClient.cancelCreateWorld(jobId);
+    } catch (err) {
+      setCancelingJob(false);
+      setSubmitError(err instanceof Error ? err.message : String(err));
+    }
+  }, [jobId, cancelingJob]);
 
   const intensity = mode === "running" ? "active" : "calm";
 
@@ -231,6 +247,8 @@ export function CreateWorldPage({
             logBoxRef={logBoxRef}
             sizeK={snapshot?.sizeK ?? sizeK}
             onRetry={onRetry}
+            onCancelJob={onCancelJob}
+            cancelingJob={cancelingJob}
           />
         )}
       </div>
@@ -344,6 +362,8 @@ function RunView({
   logBoxRef,
   sizeK,
   onRetry,
+  onCancelJob,
+  cancelingJob,
 }: {
   mode: Mode;
   snapshot: CreateJobSnapshot | null;
@@ -353,6 +373,8 @@ function RunView({
   logBoxRef: React.RefObject<HTMLDivElement | null>;
   sizeK: CreateJobSizeK;
   onRetry: () => void;
+  onCancelJob: () => void;
+  cancelingJob: boolean;
 }) {
   const currentPhase = snapshot?.phase ?? 1;
   const currentLabel =
@@ -360,9 +382,7 @@ function RunView({
       ? "Your world is ready"
       : mode === "error"
       ? "Generation failed"
-      : snapshot?.step
-      ? `${PHASE_DESCRIPTIONS[currentPhase]} · ${snapshot.step}`
-      : PHASE_DESCRIPTIONS[currentPhase];
+      : "Building your world...";
 
   const recentMilestones = useMemo(
     () =>
@@ -410,16 +430,24 @@ function RunView({
 
       <ol style={stepperStyle}>
         {PHASES.map((p) => {
-          const status =
-            mode === "done"
-              ? "done"
-              : currentPhase > p.phase
-              ? "done"
-              : currentPhase === p.phase
-              ? mode === "error"
-                ? "error"
-                : "active"
-              : "pending";
+          const isParallel = p.phase === 2 || p.phase === 3;
+          const inParallel = currentPhase === 2 || currentPhase === 3;
+
+          let status: "done" | "active" | "pending" | "error";
+          if (mode === "done") {
+            status = "done";
+          } else if (mode === "error" && (currentPhase === p.phase || (isParallel && inParallel))) {
+            status = "error";
+          } else if (currentPhase > (isParallel ? 3 : p.phase)) {
+            status = "done";
+          } else if (isParallel && inParallel) {
+            status = "active";
+          } else if (currentPhase === p.phase) {
+            status = "active";
+          } else {
+            status = "pending";
+          }
+
           return (
             <li key={p.phase} style={stepperItemStyle}>
               <div style={stepperBulletStyle(status)}>
@@ -467,12 +495,27 @@ function RunView({
                 style={{
                   color: event.stream === "stderr" ? "#ffb0b0" : "#cfe9ff",
                   whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
                 }}
               >
                 {event.line}
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {mode === "running" && (
+        <div style={runFooterControlsStyle}>
+          <button
+            type="button"
+            onClick={onCancelJob}
+            disabled={cancelingJob}
+            style={stopBtnStyle(cancelingJob)}
+          >
+            {cancelingJob ? "Stopping..." : "Stop"}
+          </button>
         </div>
       )}
 
@@ -925,6 +968,8 @@ function milestoneRowStyle(latest: boolean): CSSProperties {
   return {
     display: "flex",
     gap: 10,
+    alignItems: "flex-start",
+    minWidth: 0,
     color: latest ? "#dff3ff" : "#a8b3d4",
     opacity: latest ? 1 : 0.78,
   };
@@ -938,9 +983,11 @@ const milestoneTimeStyle: CSSProperties = {
 
 const milestoneLabelStyle: CSSProperties = {
   flex: 1,
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
+  minWidth: 0,
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
+  lineHeight: 1.45,
 };
 
 const logsToggleStyle: CSSProperties = {
@@ -966,6 +1013,8 @@ const logsBoxStyle: CSSProperties = {
   fontSize: 11,
   lineHeight: 1.5,
   color: "#cfe9ff",
+  wordBreak: "break-all",
+  overflowWrap: "anywhere",
 };
 
 const tipStyle: CSSProperties = {
@@ -980,6 +1029,28 @@ const spinnerStyle: CSSProperties = {
   alignItems: "center",
   gap: 6,
 };
+
+const runFooterControlsStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "flex-end",
+  marginTop: 14,
+};
+
+function stopBtnStyle(disabled: boolean): CSSProperties {
+  return {
+    background: "transparent",
+    color: disabled ? "#7782aa" : "#99a7d8",
+    border: `1px solid ${disabled ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.14)"}`,
+    borderRadius: 999,
+    padding: "6px 12px",
+    fontSize: 11,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.7 : 0.9,
+  };
+}
 
 function spinnerDotStyle(idx: number): CSSProperties {
   return {

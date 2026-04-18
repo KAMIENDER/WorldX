@@ -19,23 +19,27 @@ export function formatRegionSummary(worldDesign) {
 
   return regions
     .map((region, index) => {
-      const interactions = (region.interactions || [])
-        .map((interaction) => `${interaction.name}(${interaction.id})`)
-        .join("、");
       const modeLabel =
         region.type === "building"
           ? region.enterable
             ? "可进入建筑"
             : "景观建筑"
           : "户外区域";
-      return [
-        `${index + 1}. ${region.name}(${region.id})`,
-        `   - 类型：${modeLabel}`,
-        `   - 位置提示：${region.placementHint || "未指定"}`,
-        `   - 外观提示：${region.visualDescription || region.description || "未指定"}`,
-        `   - 主要功能：${interactions || "无"}`,
-      ].join("\n");
+      return `${index + 1}. ${region.name}（${modeLabel}）｜位置：${region.placementHint || "未指定"}｜外观：${region.visualDescription || region.description || "未指定"}`;
     })
+    .join("\n");
+}
+
+export function formatElementSummary(worldDesign) {
+  const elements = worldDesign?.interactiveElements || [];
+  if (elements.length === 0) {
+    return "本地图没有独立的可交互元素。";
+  }
+
+  return elements
+    .map((el, index) =>
+      `${index + 1}. ${el.name}｜位置：${el.placementHint || "未指定"}｜外观：${el.visualDescription || el.description || "未指定"}`,
+    )
     .join("\n");
 }
 

@@ -2,7 +2,7 @@ import { normalizeWorldDesign } from "../../../../orchestrator/src/world-design-
 import { geminiProVision } from "../models/gemini-pro.mjs";
 import { editImage } from "../models/gemini-flash-img.mjs";
 import { loadPrompt } from "../utils/prompt-loader.mjs";
-import { drawBoundingBoxes, getImageSize } from "../utils/image-utils.mjs";
+import { buildOverlayWorkingImage, drawBoundingBoxes, getImageSize } from "../utils/image-utils.mjs";
 import {
   COLOR_SPECS,
   MAX_BATCH_SIZE,
@@ -57,7 +57,7 @@ function buildElementBoxes(elements) {
 
 // ─── Nano Banana batch overlay ──────────────────────────────────────────────
 
-async function processBatch({ batchIndex, elements, userPrompt, mapDescription, compressedMap, save }) {
+async function processBatch({ batchIndex, elements, userPrompt, mapDescription, compressedMap, overlayInputMap, save, additionalConstraints }) {
   const IMAGE_EDIT_TIMEOUT_MS = parseInt(
     process.env.STEP3_2_OVERLAY_TIMEOUT_MS || process.env.STEP3_OVERLAY_TIMEOUT_MS || "240000", 10,
   );
@@ -90,6 +90,7 @@ async function processBatch({ batchIndex, elements, userPrompt, mapDescription, 
     mapDescription,
     elementList,
     colorLegend,
+    additionalConstraints: additionalConstraints || "",
   });
 
   console.log(`[Step 3.2] Batch ${batchIndex}: marking ${elements.length} element(s) with Nano Banana...`);
@@ -99,7 +100,7 @@ async function processBatch({ batchIndex, elements, userPrompt, mapDescription, 
     );
   });
 
-  const markedBuffer = await editImage(prompt, compressedMap, {
+  const markedBuffer = await editImage(prompt, overlayInputMap, {
     imageSize: "1K",
     logStep: `Step 3.2 overlay batch ${batchIndex}`,
     requestTimeoutMs: IMAGE_EDIT_TIMEOUT_MS,
@@ -156,127 +157,186 @@ export async function locateElements(compressedBuffer, worldDesign, userPrompt, 
   const elements = JSON.parse(JSON.stringify(preparedElements));
   const mapDescription = worldDesign.mapDescription || userPrompt;
 
-  // ── Phase A: Batch overlay via Nano Banana ──
-  console.log(`[Step 3.2] Locating ${elements.length} element(s) via color overlay...`);
-  const batches = chunkArray(elements, MAX_BATCH_SIZE);
-  console.log(`[Step 3.2] Split into ${batches.length} batch(es), max ${MAX_BATCH_SIZE} per batch`);
-
-  const batchResults = await Promise.all(
-    batches.map((batchElements, idx) =>
-      processBatch({
-        batchIndex: idx + 1,
-        elements: batchElements,
-        userPrompt,
-        mapDescription,
-        compressedMap: compressedBuffer,
-        save,
-      }),
-    ),
+  const MAX_RETRIES = parseInt(
+    process.env.STEP3_2_MAX_RETRIES || process.env.STEP3_MAX_RETRIES || "2", 10,
   );
-
-  const detectedElements = batchResults.flatMap((r) => r.detectedElements);
-  const detectedMap = new Map(detectedElements.map((d) => [d.id, d]));
-
-  for (const element of elements) {
-    const detected = detectedMap.get(element.id);
-    if (detected) {
-      element.topLeft = detected.topLeft;
-      element.bottomRight = detected.bottomRight;
-    }
-  }
-
-  const locatedElements = elements.filter((e) => e.topLeft && e.bottomRight);
-  const missingIds = elements
-    .filter((e) => !e.topLeft || !e.bottomRight)
-    .map((e) => e.id);
-
-  if (missingIds.length > 0) {
-    console.warn(`[Step 3.2] Elements not detected from overlays (will be dropped): ${missingIds.join(", ")}`);
-  }
-  console.log(`[Step 3.2] Overlay extraction: ${locatedElements.length}/${elements.length} element(s) located`);
-
-  if (locatedElements.length === 0) {
-    console.error("[Step 3.2] No elements detected from any overlay batch.");
-    return {
-      elements: [],
-      annotatedImage: compressedBuffer,
-      reviewPassed: false,
-      attempts: 1,
-      droppedElementIds: elements.map((e) => e.id),
-    };
-  }
-
-  // ── Phase B: Draw annotated image for confirmation ──
-  const boxes = buildElementBoxes(locatedElements);
-  const annotatedImage = await drawBoundingBoxes(compressedBuffer, boxes, ELEMENT_BOX_STYLE);
-  save("03.2-elements-attempt-1.png", annotatedImage);
-
-  // ── Phase C: Single Gemini Pro confirmation pass ──
+  const TOTAL_ATTEMPTS = Math.max(1, MAX_RETRIES + 1);
   const CONFIRM_TIMEOUT_MS = parseInt(
     process.env.STEP3_2_CONFIRM_TIMEOUT_MS || process.env.STEP3_CONFIRM_TIMEOUT_MS || "90000", 10,
   );
+  const { width: imageWidth, height: imageHeight } = await getImageSize(compressedBuffer);
+  const overlayWorkingImage = await buildOverlayWorkingImage(compressedBuffer);
+  if (overlayWorkingImage.resized) {
+    console.log(
+      `[Step 3.2] Using resized overlay working image ${overlayWorkingImage.width}x${overlayWorkingImage.height} (source ${imageWidth}x${imageHeight})`,
+    );
+  }
 
-  const elementsList = locatedElements
-    .map((e) => {
-      const lines = [`- ${e.id}: ${e.name} (${e.topLeft.x},${e.topLeft.y})→(${e.bottomRight.x},${e.bottomRight.y})`];
-      if (e.visualDescription) lines.push(`  外观：${e.visualDescription}`);
-      if (e.placementHint) lines.push(`  位置提示：${e.placementHint}`);
-      return lines.join("\n");
-    })
-    .join("\n");
+  let reviewPassed = false;
+  let attemptsUsed = 0;
+  let lastProblematicIds = [];
+  let additionalConstraints = "";
 
-  const { width, height } = await getImageSize(compressedBuffer);
-  const confirmPrompt = loadPrompt("step3.2-confirm-elements.md", {
-    elementsList,
-    imageWidth: width,
-    imageHeight: height,
-    userPrompt,
-  });
+  for (let attempt = 1; attempt <= TOTAL_ATTEMPTS; attempt++) {
+    const pendingElements = elements.filter((e) => !e.topLeft || !e.bottomRight);
+    if (pendingElements.length === 0) break;
 
-  let confirmResult;
-  try {
-    console.log("[Step 3.2] Running single confirmation pass with Gemini Pro...");
-    const raw = await geminiProVision(confirmPrompt, [compressedBuffer, annotatedImage], {
-      logStep: "Step 3.2 confirm",
-      requestTimeoutMs: CONFIRM_TIMEOUT_MS,
+    attemptsUsed = attempt;
+    console.log(
+      `[Step 3.2] Attempt ${attempt}/${TOTAL_ATTEMPTS}: locating ${pendingElements.length} element(s) via color overlay...`,
+    );
+
+    // ── Phase A: Batch overlay via Nano Banana (only for pending elements) ──
+    const batches = chunkArray(pendingElements, MAX_BATCH_SIZE);
+    console.log(`[Step 3.2] Split into ${batches.length} batch(es), max ${MAX_BATCH_SIZE} per batch`);
+
+    const attemptSave = attempt === 1
+      ? save
+      : (name, data) => save(name.replace(/\.png$/, `-a${attempt}.png`), data);
+
+    const batchResults = await Promise.all(
+      batches.map((batchElements, idx) =>
+        processBatch({
+          batchIndex: idx + 1,
+          elements: batchElements,
+          userPrompt,
+          mapDescription,
+          compressedMap: compressedBuffer,
+          overlayInputMap: overlayWorkingImage.buffer,
+          save: attemptSave,
+          additionalConstraints,
+        }),
+      ),
+    );
+
+    const detectedElements = batchResults.flatMap((r) => r.detectedElements);
+    const detectedMap = new Map(detectedElements.map((d) => [d.id, d]));
+
+    for (const element of elements) {
+      if ((!element.topLeft || !element.bottomRight) && detectedMap.has(element.id)) {
+        const d = detectedMap.get(element.id);
+        element.topLeft = d.topLeft;
+        element.bottomRight = d.bottomRight;
+      }
+    }
+
+    const locatedElements = elements.filter((e) => e.topLeft && e.bottomRight);
+    const stillMissingIds = elements
+      .filter((e) => !e.topLeft || !e.bottomRight)
+      .map((e) => e.id);
+
+    if (stillMissingIds.length > 0) {
+      console.warn(
+        `[Step 3.2] Attempt ${attempt}: elements not detected from overlays: ${stillMissingIds.join(", ")}`,
+      );
+    }
+    console.log(
+      `[Step 3.2] Attempt ${attempt}: overlay extraction total ${locatedElements.length}/${elements.length} located`,
+    );
+
+    if (locatedElements.length === 0) {
+      console.error(`[Step 3.2] Attempt ${attempt}: no elements detected from any overlay batch.`);
+      lastProblematicIds = [];
+      continue;
+    }
+
+    // ── Phase B: Draw annotated image for confirmation ──
+    const boxes = buildElementBoxes(locatedElements);
+    const annotatedImage = await drawBoundingBoxes(compressedBuffer, boxes, ELEMENT_BOX_STYLE);
+    save(`03.2-elements-attempt-${attempt}.png`, annotatedImage);
+
+    // ── Phase C: Gemini Pro confirmation pass ──
+    const elementsList = locatedElements
+      .map((e) => {
+        const lines = [`- ${e.id}: ${e.name} (${e.topLeft.x},${e.topLeft.y})→(${e.bottomRight.x},${e.bottomRight.y})`];
+        if (e.visualDescription) lines.push(`  外观：${e.visualDescription}`);
+        if (e.placementHint) lines.push(`  位置提示：${e.placementHint}`);
+        return lines.join("\n");
+      })
+      .join("\n");
+
+    const confirmPrompt = loadPrompt("step3.2-confirm-elements.md", {
+      elementsList,
+      imageWidth,
+      imageHeight,
+      userPrompt,
     });
-    const match = raw.match(/\{[\s\S]*\}/);
-    confirmResult = match ? JSON.parse(match[0]) : { pass: true, problematic_element_ids: [] };
-  } catch (e) {
-    console.warn(`[Step 3.2] Confirmation call failed (keeping all detected elements): ${e.message}`);
-    confirmResult = { pass: true, problematic_element_ids: [] };
+
+    let confirmResult;
+    try {
+      console.log(`[Step 3.2] Attempt ${attempt}: running confirmation pass with Gemini Pro...`);
+      const raw = await geminiProVision(confirmPrompt, [compressedBuffer, annotatedImage], {
+        logStep: `Step 3.2 confirm attempt ${attempt}`,
+        requestTimeoutMs: CONFIRM_TIMEOUT_MS,
+      });
+      const match = raw.match(/\{[\s\S]*\}/);
+      confirmResult = match ? JSON.parse(match[0]) : { pass: true, problematic_element_ids: [] };
+    } catch (e) {
+      console.warn(
+        `[Step 3.2] Attempt ${attempt}: confirmation call failed (keeping all detected elements): ${e.message}`,
+      );
+      confirmResult = { pass: true, problematic_element_ids: [] };
+    }
+
+    const problematicIds = confirmResult.problematic_element_ids || [];
+    lastProblematicIds = problematicIds;
+
+    if (confirmResult.pass) {
+      console.log(`[Step 3.2] Attempt ${attempt}: confirmation passed — all detected elements accepted.`);
+      reviewPassed = true;
+      break;
+    }
+
+    console.log(
+      `[Step 3.2] Attempt ${attempt}: flagged ${problematicIds.length} problematic element(s): ${problematicIds.join(", ")}`,
+    );
+
+    // Accumulate review feedback as constraints for next overlay attempt
+    const feedback = confirmResult.feedback || {};
+    const feedbackLines = problematicIds
+      .filter((id) => feedback[id])
+      .map((id) => `- ${id}：${feedback[id]}`);
+    if (feedbackLines.length > 0) {
+      additionalConstraints +=
+        `\n## 上一次标注审查反馈（请特别注意）\n以下元素上次标注有误，请修正：\n${feedbackLines.join("\n")}\n`;
+      console.log(`[Step 3.2] Accumulated constraints for next attempt: ${feedbackLines.join("; ")}`);
+    }
+
+    // Clear problematic boxes.
+    // On retry: they become pending again and will be re-detected next attempt.
+    // On the final attempt: they stay cleared and are dropped (existing behavior).
+    if (problematicIds.length > 0) {
+      for (const element of elements) {
+        if (problematicIds.includes(element.id)) {
+          element.topLeft = undefined;
+          element.bottomRight = undefined;
+        }
+      }
+    }
   }
 
-  const problematicIds = confirmResult.problematic_element_ids || [];
-  const droppedElementIds = [...missingIds, ...problematicIds];
+  const finalElements = elements.filter((e) => e.topLeft && e.bottomRight);
+  const droppedElementIds = elements
+    .filter((e) => !e.topLeft || !e.bottomRight)
+    .map((e) => e.id);
 
-  if (confirmResult.pass) {
-    console.log("[Step 3.2] Confirmation passed — all detected elements accepted.");
-    return {
-      elements: locatedElements,
-      annotatedImage,
-      reviewPassed: true,
-      attempts: 1,
-      droppedElementIds: missingIds,
-    };
-  }
-
-  console.log(`[Step 3.2] Confirmation flagged ${problematicIds.length} problematic element(s): ${problematicIds.join(", ")}`);
-  const finalElements = locatedElements.filter((e) => !problematicIds.includes(e.id));
-
-  let finalAnnotatedImage = annotatedImage;
-  if (problematicIds.length > 0 && finalElements.length > 0) {
+  let finalAnnotatedImage = compressedBuffer;
+  if (finalElements.length > 0) {
     const finalBoxes = buildElementBoxes(finalElements);
     finalAnnotatedImage = await drawBoundingBoxes(compressedBuffer, finalBoxes, ELEMENT_BOX_STYLE);
-  } else if (finalElements.length === 0) {
-    finalAnnotatedImage = compressedBuffer;
+  }
+
+  if (!reviewPassed && lastProblematicIds.length > 0) {
+    console.log(
+      `[Step 3.2] Retries exhausted; dropped ${lastProblematicIds.length} problematic element(s): ${lastProblematicIds.join(", ")}`,
+    );
   }
 
   return {
     elements: finalElements,
     annotatedImage: finalAnnotatedImage,
-    reviewPassed: false,
-    attempts: 1,
+    reviewPassed,
+    attempts: attemptsUsed,
     droppedElementIds,
   };
 }

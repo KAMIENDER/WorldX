@@ -72,12 +72,20 @@ export class CameraController {
 
   private setupKeyboard() {
     if (!this.scene.input.keyboard) return;
-    this.cursors = this.scene.input.keyboard.createCursorKeys();
+    this.cursors = this.scene.input.keyboard.addKeys(
+      {
+        up: Phaser.Input.Keyboard.KeyCodes.UP,
+        down: Phaser.Input.Keyboard.KeyCodes.DOWN,
+        left: Phaser.Input.Keyboard.KeyCodes.LEFT,
+        right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      },
+      false,
+    ) as Phaser.Types.Input.Keyboard.CursorKeys;
     this.wasd = {
-      W: this.scene.input.keyboard.addKey("W"),
-      A: this.scene.input.keyboard.addKey("A"),
-      S: this.scene.input.keyboard.addKey("S"),
-      D: this.scene.input.keyboard.addKey("D"),
+      W: this.scene.input.keyboard.addKey("W", false),
+      A: this.scene.input.keyboard.addKey("A", false),
+      S: this.scene.input.keyboard.addKey("S", false),
+      D: this.scene.input.keyboard.addKey("D", false),
     };
   }
 

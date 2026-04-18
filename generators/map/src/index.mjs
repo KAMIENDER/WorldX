@@ -34,9 +34,15 @@ async function main() {
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const runDir = join(OUTPUT_DIR, runId);
   mkdirSync(runDir, { recursive: true });
+  const logDir = process.env.MAP_LOG_DIR || runDir;
+  mkdirSync(logDir, { recursive: true });
 
-  initLogger(runDir);
-  log("Pipeline", "start", `userPrompt: ${userPrompt}\nrunId: ${runId}\nmapImageSize: ${MAP_IMAGE_SIZE}`);
+  initLogger(logDir, process.env.MAP_LOG_FILE_NAME || "map-pipeline.log");
+  log(
+    "Pipeline",
+    "start",
+    `userPrompt: ${userPrompt}\nrunId: ${runId}\nmapImageSize: ${MAP_IMAGE_SIZE}\noutputDir: ${runDir}\nlogDir: ${logDir}`,
+  );
 
   const metadata = { runId, userPrompt, startedAt: new Date().toISOString(), steps: {} };
   const warnings = [];

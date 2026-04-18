@@ -316,23 +316,17 @@ function normalizeSceneConfig(raw: Record<string, unknown> | null | undefined): 
     typeof raw?.tickDurationMinutes === "number" && Number.isFinite(raw.tickDurationMinutes)
       ? Math.max(1, Math.floor(raw.tickDurationMinutes))
       : 15;
-  const rawMaxTicks =
-    raw?.maxTicks === null
-      ? null
-      : typeof raw?.maxTicks === "number" && Number.isFinite(raw.maxTicks)
-        ? Math.max(1, Math.floor(raw.maxTicks))
-        : null;
-  const nextDayStartTime =
-    raw?.multiDay &&
-    typeof raw.multiDay === "object" &&
-    typeof (raw.multiDay as Record<string, unknown>).nextDayStartTime === "string" &&
-    (raw.multiDay as Record<string, unknown>).nextDayStartTime
-      ? ((raw.multiDay as Record<string, unknown>).nextDayStartTime as string)
-      : startTime;
-  const maxTicks =
-    sceneType === "open"
-      ? rawMaxTicks ?? deriveOpenSceneTicks(startTime, nextDayStartTime, tickDurationMinutes)
-      : null;
+
+  let maxTicks: number | null = null;
+  if (sceneType === "open") {
+    if (typeof raw?.maxTicks === "number" && Number.isFinite(raw.maxTicks)) {
+      maxTicks = Math.max(1, Math.floor(raw.maxTicks));
+    } else if (typeof raw?.endTime === "string" && raw.endTime) {
+      maxTicks = deriveTicksFromTimeRange(startTime, raw.endTime as string, tickDurationMinutes);
+    } else {
+      maxTicks = Math.round((12 * 60) / tickDurationMinutes);
+    }
+  }
 
   return {
     sceneType,
@@ -357,6 +351,7 @@ function normalizeMultiDay(
   const data = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const enabled =
     typeof data.enabled === "boolean" ? data.enabled : sceneType === "open" || maxTicks !== null;
+  const nextDayStartTime = sceneType === "open" ? startTime : "00:00";
 
   return {
     enabled,
@@ -365,18 +360,18 @@ function normalizeMultiDay(
     nextDayStartTime:
       typeof data.nextDayStartTime === "string" && data.nextDayStartTime
         ? data.nextDayStartTime
-        : startTime,
+        : nextDayStartTime,
   };
 }
 
-function deriveOpenSceneTicks(
+function deriveTicksFromTimeRange(
   startTime: string,
-  nextDayStartTime: string,
+  endTime: string,
   tickDurationMinutes: number,
 ): number {
   const startMinutes = parseTimeToMinutes(startTime);
-  const nextStartMinutes = parseTimeToMinutes(nextDayStartTime);
-  const diffMinutes = (nextStartMinutes - startMinutes + 24 * 60) % (24 * 60);
+  const endMinutes = parseTimeToMinutes(endTime);
+  const diffMinutes = (endMinutes - startMinutes + 24 * 60) % (24 * 60);
   const windowMinutes = diffMinutes === 0 ? 24 * 60 : diffMinutes;
   return Math.max(1, Math.round(windowMinutes / tickDurationMinutes));
 }

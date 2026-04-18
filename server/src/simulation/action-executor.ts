@@ -30,6 +30,12 @@ export function executeAction(
 
   switch (decision.actionType) {
     case "interact_object": {
+      if (profile.anchor) {
+        console.warn(
+          `[ActionExecutor] Dropping interact_object for ${charId}: character is anchored to ${profile.anchor.type}:${profile.anchor.targetId}`,
+        );
+        break;
+      }
       const objects = worldManager.getLocationObjects(state.location);
       const obj = objects.find((o) => o.id === decision.targetId);
       if (!obj) {

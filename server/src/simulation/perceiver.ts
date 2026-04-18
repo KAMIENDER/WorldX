@@ -36,23 +36,26 @@ export function buildPerception(
     };
   });
 
-  const charsAtLoc = characterManager.getCharactersAtLocation(state.location);
+  const charsAtLoc =
+    state.location === "main_area"
+      ? characterManager.getAllStates().map((s) => ({
+          profile: characterManager.getProfile(s.characterId),
+          state: s,
+        }))
+      : characterManager.getCharactersAtLocation(state.location);
   const charactersHere = charsAtLoc
     .filter((c) => c.profile.id !== charId)
-    .filter((c) => {
-      if (state.location !== "main_area") return true;
-      return worldManager.areMainAreaPointsConversable(
-        state.mainAreaPointId,
-        c.state.mainAreaPointId,
-      );
-    })
     .map((c) => {
       const visiblyEmotional =
         Math.abs(c.state.emotionValence) >= 2 || c.state.emotionArousal >= 7;
+      const targetLocation =
+        worldManager.getLocation(c.state.location)?.name ?? c.state.location;
       return {
         id: c.profile.id,
         name: c.profile.name,
         currentAction: c.state.currentAction,
+        locationId: c.state.location,
+        locationName: targetLocation,
         emotionLabel: visiblyEmotional
           ? getEmotionLabel(c.state.emotionValence, c.state.emotionArousal)
           : undefined,

@@ -237,6 +237,7 @@ function buildLocations(tmjRegions, tmjObjects, worldDesign, tmj) {
                 duration: inter.duration || 2,
                 effects: inter.effects || [],
                 repeatable: inter.repeatable ?? true,
+                ...(inter.requiresAnchor === true ? { requiresAnchor: true } : {}),
               },
             ],
           });
@@ -300,6 +301,7 @@ function buildLocations(tmjRegions, tmjObjects, worldDesign, tmj) {
             duration: inter.duration || 2,
             effects: inter.effects || [],
             repeatable: inter.repeatable ?? true,
+            ...(inter.requiresAnchor === true ? { requiresAnchor: true } : {}),
           },
         ],
       }))
@@ -328,6 +330,7 @@ function buildElementObjects(designedElements, tmjObjects) {
       duration: inter.duration || 2,
       effects: inter.effects || [],
       repeatable: inter.repeatable ?? true,
+      ...(inter.requiresAnchor === true ? { requiresAnchor: true } : {}),
     }));
 
     return {

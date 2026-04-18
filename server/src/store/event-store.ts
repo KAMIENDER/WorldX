@@ -135,6 +135,17 @@ export function getEventsByTimeRange(from: GameTime, to: GameTime): SimulationEv
   return rows.map(rowToEvent);
 }
 
+export function getEventsByIds(ids: string[]): SimulationEvent[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  const sql = `SELECT * FROM events WHERE id IN (${placeholders})`;
+  const rows = (getDb().prepare(sql).all(...ids) as any[]).map(rowToEvent);
+  const byId = new Map(rows.map((event) => [event.id, event]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((event): event is SimulationEvent => !!event);
+}
+
 export function getLatestEvents(count: number): SimulationEvent[] {
   const sql = `SELECT * FROM events ORDER BY game_day DESC, game_tick DESC, rowid DESC LIMIT ?`;
   return (getDb().prepare(sql).all(count) as any[]).map(rowToEvent);

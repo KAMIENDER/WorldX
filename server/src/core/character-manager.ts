@@ -37,8 +37,14 @@ export class CharacterManager {
     this.relationshipManager = new RelationshipManager(this.profiles);
 
     const occupiedPointIds = new Set<string>();
+    const spawnSeedSalt = `init:${Date.now().toString(36)}`;
     for (const profile of profiles) {
-      const state = buildInitialCharacterState(profile, this.worldManager, occupiedPointIds);
+      const state = buildInitialCharacterState(
+        profile,
+        this.worldManager,
+        occupiedPointIds,
+        spawnSeedSalt,
+      );
       if (state.mainAreaPointId) {
         occupiedPointIds.add(state.mainAreaPointId);
       }
@@ -141,6 +147,37 @@ export class CharacterManager {
     return charStateStore.getAllCharacterStates();
   }
 
+  resetStatesForNewScene(): void {
+    const occupiedPointIds = new Set<string>();
+    const currentTime = this.worldManager.getCurrentTime();
+    const spawnSeedSalt = `scene:${currentTime.day}:${Date.now().toString(36)}`;
+
+    for (const profile of this.getAllProfiles()) {
+      const initialState = buildInitialCharacterState(
+        profile,
+        this.worldManager,
+        occupiedPointIds,
+        spawnSeedSalt,
+      );
+      if (initialState.mainAreaPointId) {
+        occupiedPointIds.add(initialState.mainAreaPointId);
+      }
+
+      charStateStore.updateCharacterState(profile.id, {
+        location: initialState.location,
+        mainAreaPointId: initialState.mainAreaPointId,
+        currentAction: initialState.currentAction,
+        currentActionTarget: initialState.currentActionTarget,
+        actionStartTick: initialState.actionStartTick,
+        actionEndTick: initialState.actionEndTick,
+        emotionValence: initialState.emotionValence,
+        emotionArousal: initialState.emotionArousal,
+        curiosity: initialState.curiosity,
+        dailyPlan: initialState.dailyPlan,
+      });
+    }
+  }
+
   updateState(charId: string, patch: Partial<CharacterState>): void {
     charStateStore.updateCharacterState(charId, patch);
   }
@@ -226,7 +263,9 @@ function buildInitialCharacterState(
   profile: CharacterProfile,
   worldManager: WorldManager,
   occupiedPointIds: Set<string>,
+  spawnSeedSalt: string,
 ): CharacterState {
+  const spawnSeed = `${profile.id}:${spawnSeedSalt}`;
   let mainAreaPointId: string | null = null;
   if (profile.startPosition === "main_area") {
     if (profile.anchor?.type === "element") {
@@ -236,9 +275,9 @@ function buildInitialCharacterState(
       // in a small disconnected component of the point graph.
       mainAreaPointId = point
         ? elementPointId
-        : worldManager.getSpreadMainAreaPointId(profile.id, occupiedPointIds);
+        : worldManager.getSpreadMainAreaPointId(spawnSeed, occupiedPointIds);
     } else {
-      mainAreaPointId = worldManager.getSpreadMainAreaPointId(profile.id, occupiedPointIds);
+      mainAreaPointId = worldManager.getSpreadMainAreaPointId(spawnSeed, occupiedPointIds);
     }
   }
 

@@ -5,9 +5,9 @@ import { loadPrompt } from "../utils/prompt-loader.mjs";
 import { resizeImage } from "../utils/image-utils.mjs";
 import { getMapImageSizeLabel } from "../utils/generation-config.mjs";
 import {
+  formatElementSummary,
   formatMapPlanSummary,
   formatRegionSummary,
-  formatWorldActionSummary,
 } from "../utils/world-design-summary.mjs";
 
 /**
@@ -28,8 +28,8 @@ export async function generateMap(userPrompt, worldDesign, save) {
   let mapBuffer = null;
   const totalAttempts = MAX_RETRIES + 1;
   const mapPlanSummary = formatMapPlanSummary(worldDesign);
-  const worldActionSummary = formatWorldActionSummary(worldDesign);
   const regionSummary = formatRegionSummary(worldDesign);
+  const elementSummary = formatElementSummary(worldDesign);
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     console.log(`[Step 1] Generating map (attempt ${attempt}/${totalAttempts})...`);
@@ -37,8 +37,8 @@ export async function generateMap(userPrompt, worldDesign, save) {
     const prompt = loadPrompt("step1-map-generation.md", {
       userPrompt,
       mapPlanSummary,
-      worldActionSummary,
       regionSummary,
+      elementSummary,
       additionalConstraints,
     });
 
@@ -57,8 +57,8 @@ export async function generateMap(userPrompt, worldDesign, save) {
     const reviewPrompt = loadPrompt("step1-map-review.md", {
       userPrompt,
       mapPlanSummary,
-      worldActionSummary,
       regionSummary,
+      elementSummary,
     });
 
     let review;

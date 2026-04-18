@@ -190,7 +190,12 @@ export const apiClient = {
     return fetchJSON(`/graph/history/${day}`);
   },
 
-  simulateTick(): Promise<{ ok: boolean; gameTime: WorldTimeInfo; eventCount: number }> {
+  simulateTick(): Promise<{
+    ok: boolean;
+    gameTime: WorldTimeInfo;
+    eventCount: number;
+    events: SimulationEvent[];
+  }> {
     return postJSON("/simulation/tick");
   },
 
@@ -208,6 +213,15 @@ export const apiClient = {
 
   resetWorld(): Promise<{ ok: boolean; gameTime: WorldTimeInfo }> {
     return postJSON("/simulation/reset");
+  },
+
+  setDevTickDurationMinutes(tickDurationMinutes: 15 | 30 | 60): Promise<{
+    ok: boolean;
+    gameTime: WorldTimeInfo;
+    sceneConfig: SceneConfigInfo;
+    sceneRuntime: SceneRuntimeInfo;
+  }> {
+    return postJSON("/world/dev/tick-duration", { tickDurationMinutes });
   },
 
   godBroadcast(params: {
@@ -317,6 +331,10 @@ export const apiClient = {
 
   getJobStatus(jobId: string): Promise<CreateJobSnapshot> {
     return fetchJSON(`/worlds/jobs/${encodeURIComponent(jobId)}`);
+  },
+
+  cancelCreateWorld(jobId: string): Promise<{ ok: boolean }> {
+    return postJSON(`/worlds/jobs/${encodeURIComponent(jobId)}/cancel`);
   },
 
   subscribeJobEvents(

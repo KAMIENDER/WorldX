@@ -32,7 +32,6 @@ export class DialogueGenerator {
   }): Promise<DialogueTurnGeneration> {
     const { session, gameTime } = params;
     const context = this.buildDialogueContext(session, gameTime);
-    const remainingTurns = Math.max(0, session.maxTurns - session.totalTurns);
 
     try {
       const messages = this.promptBuilder.buildDialogueTurnMessages({
@@ -43,8 +42,7 @@ export class DialogueGenerator {
         gameTime,
         transcript: session.transcript,
         nextSpeaker: session.nextSpeaker,
-        maxTurns: session.maxTurns,
-        remainingTurns,
+        totalTurns: session.totalTurns,
         hearsayA: context.hearsayA,
         hearsayB: context.hearsayB,
       });
@@ -78,7 +76,7 @@ export class DialogueGenerator {
           content: llmOutput.content,
           ...(innerMonologue ? { innerMonologue } : {}),
         },
-        shouldContinue: llmOutput.shouldContinue && remainingTurns > 1,
+        shouldContinue: llmOutput.shouldContinue,
         suggestedNextSpeaker: this.normalizeSpeaker(
           llmOutput.suggestedNextSpeaker,
           context.profileA,

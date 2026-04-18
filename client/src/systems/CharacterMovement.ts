@@ -109,7 +109,7 @@ export class CharacterMovement {
 
     const path = await this.pathfinder.findPathToObject(sprite.x, sprite.y, objectId);
     if (path && path.length > 0) {
-      sprite.walkAlongPath(path);
+      await this.walkSprite(sprite, path);
     }
   }
 

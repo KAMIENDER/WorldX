@@ -150,8 +150,7 @@ export class PromptBuilder {
     gameTime: GameTime;
     transcript: { speaker: string; content: string }[];
     nextSpeaker: string;
-    maxTurns: number;
-    remainingTurns: number;
+    totalTurns: number;
     hearsayA?: string;
     hearsayB?: string;
   }): Message[] {
@@ -204,9 +203,7 @@ export class PromptBuilder {
       transcript: formatTranscript(params.transcript),
       nextSpeakerId: params.nextSpeaker,
       nextSpeakerName: nextSpeakerProfile?.name ?? params.nextSpeaker,
-      maxTurns: String(params.maxTurns),
-      remainingTurns: String(params.remainingTurns),
-      currentTurnCount: String(params.maxTurns - params.remainingTurns),
+      currentTurnCount: String(params.totalTurns),
       iconicCuesBlock: formatIconicCuesBlockForPair(a.profile, b.profile),
     });
 
@@ -414,11 +411,15 @@ function formatPerception(p: Perception): string {
   }
 
   if (p.charactersHere.length > 0) {
-    lines.push("附近的人：");
+    lines.push("能看到的人：");
     for (const c of p.charactersHere) {
+      const locationHint =
+        c.locationName && c.locationName !== p.currentLocation
+          ? `（在${c.locationName}）`
+          : "";
       const emotionHint = c.emotionLabel ? `（看起来${c.emotionLabel}）` : "";
       lines.push(
-        `  - ${c.name}${c.currentAction ? "正在" + c.currentAction : ""}${emotionHint}`,
+        `  - ${c.name}${locationHint}${c.currentAction ? "正在" + c.currentAction : ""}${emotionHint}`,
       );
     }
   }

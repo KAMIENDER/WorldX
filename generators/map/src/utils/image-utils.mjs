@@ -22,6 +22,26 @@ export async function resizeImage(imageBuffer, targetWidth, options = {}) {
 }
 
 /**
+ * Build a lighter-weight working image for overlay localization steps.
+ * Keeps 1K-ish inputs unchanged, but downsizes larger images while preserving
+ * aspect ratio so overlay editing spends fewer tokens. Returned coordinates
+ * should always be mapped back to the original image size by callers.
+ */
+export async function buildOverlayWorkingImage(imageBuffer) {
+  const { width, height } = await getImageSize(imageBuffer);
+  if (width <= 1536) {
+    return { buffer: imageBuffer, width, height, resized: false };
+  }
+
+  const targetWidth = Math.min(1536, Math.max(1152, Math.round(width / 2)));
+  const resized = await resizeImage(imageBuffer, targetWidth);
+  return {
+    ...resized,
+    resized: resized.width !== width,
+  };
+}
+
+/**
  * Get image dimensions.
  */
 export async function getImageSize(imageBuffer) {

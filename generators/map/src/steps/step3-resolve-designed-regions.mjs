@@ -2,7 +2,7 @@ import { normalizeWorldDesign } from "../../../../orchestrator/src/world-design-
 import { geminiProVision } from "../models/gemini-pro.mjs";
 import { editImage } from "../models/gemini-flash-img.mjs";
 import { loadPrompt } from "../utils/prompt-loader.mjs";
-import { drawBoundingBoxes, getImageSize } from "../utils/image-utils.mjs";
+import { buildOverlayWorkingImage, drawBoundingBoxes, getImageSize } from "../utils/image-utils.mjs";
 import {
   COLOR_SPECS,
   MAX_BATCH_SIZE,
@@ -66,7 +66,7 @@ function prepareDesignedRegions(worldDesign) {
 
 // ─── Nano Banana batch overlay + image-diff extraction ──────────────────────
 
-async function processBatch({ batchIndex, regions, userPrompt, mapDescription, compressedMap, save }) {
+async function processBatch({ batchIndex, regions, userPrompt, mapDescription, compressedMap, overlayInputMap, save, additionalConstraints }) {
   const IMAGE_EDIT_TIMEOUT_MS = parseInt(
     process.env.STEP3_OVERLAY_TIMEOUT_MS || "240000", 10,
   );
@@ -100,6 +100,7 @@ async function processBatch({ batchIndex, regions, userPrompt, mapDescription, c
     mapDescription,
     regionList,
     colorLegend,
+    additionalConstraints: additionalConstraints || "",
   });
 
   console.log(`[Step 3] Batch ${batchIndex}: marking ${regions.length} regions with Nano Banana...`);
@@ -109,7 +110,7 @@ async function processBatch({ batchIndex, regions, userPrompt, mapDescription, c
     );
   });
 
-  const markedBuffer = await editImage(prompt, compressedMap, {
+  const markedBuffer = await editImage(prompt, overlayInputMap, {
     imageSize: "1K",
     logStep: `Step 3 overlay batch ${batchIndex}`,
     requestTimeoutMs: IMAGE_EDIT_TIMEOUT_MS,
@@ -167,127 +168,182 @@ export async function resolveDesignedRegions(compressedBuffer, worldDesign, user
   const regions = cloneRegions(preparedRegions);
   const mapDescription = worldDesign.mapDescription || userPrompt;
 
-  // ── Phase A: Batch overlay via Nano Banana ──
-  console.log(`[Step 3] Locating ${regions.length} regions via color overlay...`);
-  const batches = chunkArray(regions, MAX_BATCH_SIZE);
-  console.log(`[Step 3] Split into ${batches.length} batch(es), max ${MAX_BATCH_SIZE} per batch`);
-
-  const batchResults = await Promise.all(
-    batches.map((batchRegions, idx) =>
-      processBatch({
-        batchIndex: idx + 1,
-        regions: batchRegions,
-        userPrompt,
-        mapDescription,
-        compressedMap: compressedBuffer,
-        save,
-      }),
-    ),
-  );
-
-  const detectedRegions = batchResults.flatMap((r) => r.detectedRegions);
-  const detectedMap = new Map(detectedRegions.map((d) => [d.id, d]));
-
-  for (const region of regions) {
-    const detected = detectedMap.get(region.id);
-    if (detected) {
-      region.topLeft = detected.topLeft;
-      region.bottomRight = detected.bottomRight;
-    }
-  }
-
-  const locatedRegions = regions.filter((r) => r.topLeft && r.bottomRight);
-  const missingIds = regions
-    .filter((r) => !r.topLeft || !r.bottomRight)
-    .map((r) => r.id);
-
-  if (missingIds.length > 0) {
-    console.warn(`[Step 3] Regions not detected from overlays (will be dropped): ${missingIds.join(", ")}`);
-  }
-  console.log(`[Step 3] Overlay extraction: ${locatedRegions.length}/${regions.length} regions located`);
-
-  if (locatedRegions.length === 0) {
-    console.error("[Step 3] No regions detected from any overlay batch.");
-    return {
-      preparedRegions,
-      regions: [],
-      annotatedImage: compressedBuffer,
-      reviewPassed: false,
-      attempts: 1,
-      droppedRegionIds: regions.map((r) => r.id),
-    };
-  }
-
-  // ── Phase B: Draw annotated image for confirmation ──
-  const boxes = buildRegionBoxes(locatedRegions);
-  const annotatedImage = await drawBoundingBoxes(compressedBuffer, boxes, REGION_BOX_STYLE);
-  save("03-regions-attempt-1.png", annotatedImage);
-
-  // ── Phase C: Single Gemini Pro confirmation pass ──
+  const MAX_RETRIES = parseInt(process.env.STEP3_MAX_RETRIES || "2", 10);
+  const TOTAL_ATTEMPTS = Math.max(1, MAX_RETRIES + 1);
   const CONFIRM_TIMEOUT_MS = parseInt(
     process.env.STEP3_CONFIRM_TIMEOUT_MS || process.env.STEP3_REVIEW_TIMEOUT_MS || "90000", 10,
   );
+  const { width: imageWidth, height: imageHeight } = await getImageSize(compressedBuffer);
+  const overlayWorkingImage = await buildOverlayWorkingImage(compressedBuffer);
+  if (overlayWorkingImage.resized) {
+    console.log(
+      `[Step 3] Using resized overlay working image ${overlayWorkingImage.width}x${overlayWorkingImage.height} (source ${imageWidth}x${imageHeight})`,
+    );
+  }
 
-  const regionsList = locatedRegions
-    .map((r) =>
-      `- ${r.id}: ${r.name} (${r.type}) (${r.topLeft.x},${r.topLeft.y})→(${r.bottomRight.x},${r.bottomRight.y})`,
-    )
-    .join("\n");
+  let reviewPassed = false;
+  let attemptsUsed = 0;
+  let lastProblematicIds = [];
+  let additionalConstraints = "";
 
-  const { width, height } = await getImageSize(compressedBuffer);
-  const confirmPrompt = loadPrompt("step3-confirm-regions.md", {
-    regionsList,
-    imageWidth: width,
-    imageHeight: height,
-    userPrompt,
-  });
+  for (let attempt = 1; attempt <= TOTAL_ATTEMPTS; attempt++) {
+    const pendingRegions = regions.filter((r) => !r.topLeft || !r.bottomRight);
+    if (pendingRegions.length === 0) break;
 
-  let confirmResult;
-  try {
-    console.log("[Step 3] Running single confirmation pass with Gemini Pro...");
-    const raw = await geminiProVision(confirmPrompt, [compressedBuffer, annotatedImage], {
-      logStep: "Step 3 confirm",
-      requestTimeoutMs: CONFIRM_TIMEOUT_MS,
+    attemptsUsed = attempt;
+    console.log(
+      `[Step 3] Attempt ${attempt}/${TOTAL_ATTEMPTS}: locating ${pendingRegions.length} region(s) via color overlay...`,
+    );
+
+    // ── Phase A: Batch overlay via Nano Banana (only for pending regions) ──
+    const batches = chunkArray(pendingRegions, MAX_BATCH_SIZE);
+    console.log(`[Step 3] Split into ${batches.length} batch(es), max ${MAX_BATCH_SIZE} per batch`);
+
+    const attemptSave = attempt === 1
+      ? save
+      : (name, data) => save(name.replace(/\.png$/, `-a${attempt}.png`), data);
+
+    const batchResults = await Promise.all(
+      batches.map((batchRegions, idx) =>
+        processBatch({
+          batchIndex: idx + 1,
+          regions: batchRegions,
+          userPrompt,
+          mapDescription,
+          compressedMap: compressedBuffer,
+          overlayInputMap: overlayWorkingImage.buffer,
+          save: attemptSave,
+          additionalConstraints,
+        }),
+      ),
+    );
+
+    const detectedRegions = batchResults.flatMap((r) => r.detectedRegions);
+    const detectedMap = new Map(detectedRegions.map((d) => [d.id, d]));
+
+    for (const region of regions) {
+      if ((!region.topLeft || !region.bottomRight) && detectedMap.has(region.id)) {
+        const d = detectedMap.get(region.id);
+        region.topLeft = d.topLeft;
+        region.bottomRight = d.bottomRight;
+      }
+    }
+
+    const locatedRegions = regions.filter((r) => r.topLeft && r.bottomRight);
+    const stillMissingIds = regions
+      .filter((r) => !r.topLeft || !r.bottomRight)
+      .map((r) => r.id);
+
+    if (stillMissingIds.length > 0) {
+      console.warn(
+        `[Step 3] Attempt ${attempt}: regions not detected from overlays: ${stillMissingIds.join(", ")}`,
+      );
+    }
+    console.log(
+      `[Step 3] Attempt ${attempt}: overlay extraction total ${locatedRegions.length}/${regions.length} located`,
+    );
+
+    if (locatedRegions.length === 0) {
+      console.error(`[Step 3] Attempt ${attempt}: no regions detected from any overlay batch.`);
+      lastProblematicIds = [];
+      continue;
+    }
+
+    // ── Phase B: Draw annotated image for confirmation ──
+    const boxes = buildRegionBoxes(locatedRegions);
+    const annotatedImage = await drawBoundingBoxes(compressedBuffer, boxes, REGION_BOX_STYLE);
+    save(`03-regions-attempt-${attempt}.png`, annotatedImage);
+
+    // ── Phase C: Gemini Pro confirmation pass ──
+    const regionsList = locatedRegions
+      .map((r) =>
+        `- ${r.id}: ${r.name} (${r.type}) (${r.topLeft.x},${r.topLeft.y})→(${r.bottomRight.x},${r.bottomRight.y})`,
+      )
+      .join("\n");
+
+    const confirmPrompt = loadPrompt("step3-confirm-regions.md", {
+      regionsList,
+      imageWidth,
+      imageHeight,
+      userPrompt,
     });
-    const match = raw.match(/\{[\s\S]*\}/);
-    confirmResult = match ? JSON.parse(match[0]) : { pass: true, problematic_region_ids: [] };
-  } catch (e) {
-    console.warn(`[Step 3] Confirmation call failed (keeping all detected regions): ${e.message}`);
-    confirmResult = { pass: true, problematic_region_ids: [] };
+
+    let confirmResult;
+    try {
+      console.log(`[Step 3] Attempt ${attempt}: running confirmation pass with Gemini Pro...`);
+      const raw = await geminiProVision(confirmPrompt, [compressedBuffer, annotatedImage], {
+        logStep: `Step 3 confirm attempt ${attempt}`,
+        requestTimeoutMs: CONFIRM_TIMEOUT_MS,
+      });
+      const match = raw.match(/\{[\s\S]*\}/);
+      confirmResult = match ? JSON.parse(match[0]) : { pass: true, problematic_region_ids: [] };
+    } catch (e) {
+      console.warn(
+        `[Step 3] Attempt ${attempt}: confirmation call failed (keeping all detected regions): ${e.message}`,
+      );
+      confirmResult = { pass: true, problematic_region_ids: [] };
+    }
+
+    const problematicIds = confirmResult.problematic_region_ids || [];
+    lastProblematicIds = problematicIds;
+
+    if (confirmResult.pass) {
+      console.log(`[Step 3] Attempt ${attempt}: confirmation passed — all detected regions accepted.`);
+      reviewPassed = true;
+      break;
+    }
+
+    console.log(
+      `[Step 3] Attempt ${attempt}: flagged ${problematicIds.length} problematic region(s): ${problematicIds.join(", ")}`,
+    );
+
+    // Accumulate review feedback as constraints for next overlay attempt
+    const feedback = confirmResult.feedback || {};
+    const feedbackLines = problematicIds
+      .filter((id) => feedback[id])
+      .map((id) => `- ${id}：${feedback[id]}`);
+    if (feedbackLines.length > 0) {
+      additionalConstraints +=
+        `\n## 上一次标注审查反馈（请特别注意）\n以下区域上次标注有误，请修正：\n${feedbackLines.join("\n")}\n`;
+      console.log(`[Step 3] Accumulated constraints for next attempt: ${feedbackLines.join("; ")}`);
+    }
+
+    // Clear problematic boxes.
+    // On retry: they become pending again and will be re-detected next attempt.
+    // On the final attempt: they stay cleared and are dropped (existing behavior).
+    if (problematicIds.length > 0) {
+      for (const region of regions) {
+        if (problematicIds.includes(region.id)) {
+          region.topLeft = undefined;
+          region.bottomRight = undefined;
+        }
+      }
+    }
   }
 
-  const problematicIds = confirmResult.problematic_region_ids || [];
-  const droppedRegionIds = [...missingIds, ...problematicIds];
+  const finalRegions = regions.filter((r) => r.topLeft && r.bottomRight);
+  const droppedRegionIds = regions
+    .filter((r) => !r.topLeft || !r.bottomRight)
+    .map((r) => r.id);
 
-  if (confirmResult.pass) {
-    console.log("[Step 3] Confirmation passed — all detected regions accepted.");
-    return {
-      preparedRegions,
-      regions: locatedRegions,
-      annotatedImage,
-      reviewPassed: true,
-      attempts: 1,
-      droppedRegionIds: missingIds,
-    };
-  }
-
-  console.log(`[Step 3] Confirmation flagged ${problematicIds.length} problematic region(s): ${problematicIds.join(", ")}`);
-  const finalRegions = locatedRegions.filter((r) => !problematicIds.includes(r.id));
-
-  let finalAnnotatedImage = annotatedImage;
-  if (problematicIds.length > 0 && finalRegions.length > 0) {
+  let finalAnnotatedImage = compressedBuffer;
+  if (finalRegions.length > 0) {
     const finalBoxes = buildRegionBoxes(finalRegions);
     finalAnnotatedImage = await drawBoundingBoxes(compressedBuffer, finalBoxes, REGION_BOX_STYLE);
-  } else if (finalRegions.length === 0) {
-    finalAnnotatedImage = compressedBuffer;
+  }
+
+  if (!reviewPassed && lastProblematicIds.length > 0) {
+    console.log(
+      `[Step 3] Retries exhausted; dropped ${lastProblematicIds.length} problematic region(s): ${lastProblematicIds.join(", ")}`,
+    );
   }
 
   return {
     preparedRegions,
     regions: finalRegions,
     annotatedImage: finalAnnotatedImage,
-    reviewPassed: false,
-    attempts: 1,
+    reviewPassed,
+    attempts: attemptsUsed,
     droppedRegionIds,
   };
 }

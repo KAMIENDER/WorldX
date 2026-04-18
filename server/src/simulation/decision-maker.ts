@@ -29,6 +29,8 @@ export class DecisionMaker {
     const contextKeywords: string[] = [perception.currentLocation];
     for (const c of perception.charactersHere) {
       contextKeywords.push(c.name, c.id);
+      if (c.locationId) contextKeywords.push(c.locationId);
+      if (c.locationName) contextKeywords.push(c.locationName);
     }
 
     const memories = this.characterManager.memoryManager.retrieveMemories({

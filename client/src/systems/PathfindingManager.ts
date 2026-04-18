@@ -16,6 +16,24 @@ export class PathfindingManager {
     this.easystar = new EasyStar.js();
     this.easystar.setGrid(mapManager.collisionGrid);
     this.easystar.setAcceptableTiles([0]);
+    this.applyEdgeCosts(mapManager);
+  }
+
+  private applyEdgeCosts(map: MapManager): void {
+    const EDGE_COST = 3;
+    for (let gy = 0; gy < map.gridHeight; gy++) {
+      for (let gx = 0; gx < map.gridWidth; gx++) {
+        if (!map.isWalkable(gx, gy)) continue;
+        if (
+          !map.isWalkable(gx - 1, gy) ||
+          !map.isWalkable(gx + 1, gy) ||
+          !map.isWalkable(gx, gy - 1) ||
+          !map.isWalkable(gx, gy + 1)
+        ) {
+          this.easystar.setAdditionalPointCost(gx, gy, EDGE_COST);
+        }
+      }
+    }
   }
 
   async findPath(

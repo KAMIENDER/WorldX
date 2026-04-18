@@ -2,7 +2,7 @@ const DEFAULT_POINT_RATIO = parseFloat(process.env.MAIN_AREA_POINT_RATIO || "0.1
 const MIN_POINT_SPACING_TILES = parseInt(process.env.MAIN_AREA_POINT_MIN_TILES || "6", 10);
 const MAX_POINT_SPACING_TILES = parseInt(process.env.MAIN_AREA_POINT_MAX_TILES || "14", 10);
 const SNAP_SEARCH_RADIUS_TILES = parseInt(process.env.MAIN_AREA_POINT_SNAP_TILES || "3", 10);
-const MAX_MAIN_AREA_POINTS = parseInt(process.env.MAIN_AREA_POINT_MAX_COUNT || "18", 10);
+const MAX_MAIN_AREA_POINTS = parseInt(process.env.MAIN_AREA_POINT_MAX_COUNT || "24", 10);
 
 export function buildMainAreaPoints({ tmj, collisionLayer, regions = [], elementObjects = [] }) {
   const tileSize = tmj?.tilewidth || 32;
@@ -23,8 +23,8 @@ export function buildMainAreaPoints({ tmj, collisionLayer, regions = [], element
   );
 
   const passes = [
-    { spacingPx: baseSpacingPx, blockedClearanceTiles: 2, regionMarginPx: tileSize * 2 },
-    { spacingPx: Math.max(tileSize * 5, baseSpacingPx * 0.82), blockedClearanceTiles: 1, regionMarginPx: tileSize },
+    { spacingPx: baseSpacingPx, blockedClearanceTiles: 3, regionMarginPx: tileSize * 2 },
+    { spacingPx: Math.max(tileSize * 5, baseSpacingPx * 0.82), blockedClearanceTiles: 2, regionMarginPx: tileSize },
   ];
 
   for (const pass of passes) {
@@ -73,10 +73,12 @@ function buildElementApproachPoints(elementObjects, collisionData, gridWidth, gr
   const points = [];
   for (const obj of elementObjects) {
     if (!obj.x || !obj.y || !obj.width || !obj.height) continue;
-    const approachX = obj.x + obj.width / 2;
-    const approachY = obj.y + obj.height + tileSize;
-    const snapped = snapToWalkableOutsideBox(
-      approachX, approachY, obj, collisionData, gridWidth, gridHeight, tileSize,
+    const snapped = findBestElementApproachPoint(
+      obj,
+      collisionData,
+      gridWidth,
+      gridHeight,
+      tileSize,
     );
     if (!snapped) continue;
     const objProps = {};
@@ -91,6 +93,34 @@ function buildElementApproachPoints(elementObjects, collisionData, gridWidth, gr
     });
   }
   return points;
+}
+
+function findBestElementApproachPoint(box, collisionData, gridWidth, gridHeight, tileSize) {
+  const candidates = [
+    { x: box.x + box.width / 2, y: box.y + box.height + tileSize },
+    { x: box.x + box.width / 2, y: box.y - tileSize },
+    { x: box.x - tileSize, y: box.y + box.height / 2 },
+    { x: box.x + box.width + tileSize, y: box.y + box.height / 2 },
+  ];
+
+  let best = null;
+  for (const candidate of candidates) {
+    const snapped = snapToWalkableOutsideBox(
+      candidate.x,
+      candidate.y,
+      box,
+      collisionData,
+      gridWidth,
+      gridHeight,
+      tileSize,
+    );
+    if (!snapped) continue;
+    if (!best || snapped.score < best.score) {
+      best = snapped;
+    }
+  }
+
+  return best;
 }
 
 function snapToWalkableOutsideBox(x, y, box, collisionData, gridWidth, gridHeight, tileSize) {

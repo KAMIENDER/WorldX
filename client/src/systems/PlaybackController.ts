@@ -1,6 +1,13 @@
 import Phaser from "phaser";
 import { apiClient } from "../ui/services/api-client";
-import type { GameTime, WorldTimeInfo } from "../types/api";
+import type { GameTime, SimulationEvent, WorldTimeInfo } from "../types/api";
+
+type TickResponse = {
+  ok: boolean;
+  gameTime: WorldTimeInfo;
+  eventCount: number;
+  events: SimulationEvent[];
+};
 
 export class PlaybackController extends Phaser.Events.EventEmitter {
   private currentTime: WorldTimeInfo = {
@@ -9,11 +16,13 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
     timeString: "08:00",
     period: "上午",
   };
-  private tickInFlight = false;
   private autoPlay = false;
   private tickIntervalMs = 0;
   private nextTickDueAt = 0;
   private tickStartedAt = 0;
+  private playbackInProgress = false;
+  private requestInFlight = false;
+  private prefetchedTick: TickResponse | null = null;
 
   constructor(private globalEventBus: Phaser.Events.EventEmitter) {
     super();
@@ -32,8 +41,9 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
   }
 
   update(_delta: number): void {
-    if (!this.autoPlay || this.tickInFlight) return;
+    if (!this.autoPlay || this.playbackInProgress) return;
     if (performance.now() < this.nextTickDueAt) return;
+    if (this.requestInFlight && !this.prefetchedTick) return;
     void this.devAdvanceTick();
   }
 
@@ -74,9 +84,10 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
   }
 
   async devAdvanceTick(): Promise<void> {
-    if (this.tickInFlight) return;
+    if (this.playbackInProgress) return;
+    if (this.requestInFlight && !this.prefetchedTick) return;
 
-    this.tickInFlight = true;
+    this.playbackInProgress = true;
     this.tickStartedAt = performance.now();
     this.globalEventBus.emit("simulation_status", {
       status: "running",
@@ -85,19 +96,28 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
     });
 
     try {
-      const result = await apiClient.simulateTick();
+      const result = this.prefetchedTick ?? await this.fetchTick();
+      this.prefetchedTick = null;
       this.currentTime = result.gameTime;
 
-      try {
-        const events = await apiClient.getEventsByRange(this.currentTime, this.currentTime);
-        for (const event of events) {
-          this.emit("event", event);
-        }
-      } catch (e) {
-        console.warn("[PlaybackController] Failed to fetch tick events:", e);
+      this.globalEventBus.emit("tick_playback_started", {
+        gameTime: result.gameTime,
+        eventCount: result.events?.length ?? 0,
+      });
+      for (const event of result.events || []) {
+        this.emit("event", event);
+      }
+      this.globalEventBus.emit("time_update", { ...this.currentTime });
+      this.globalEventBus.emit("tick_playback_events_flushed", {
+        gameTime: result.gameTime,
+        eventCount: result.events?.length ?? 0,
+      });
+
+      if (this.autoPlay) {
+        this.ensurePrefetch();
       }
 
-      this.globalEventBus.emit("time_update", { ...this.currentTime });
+      await this.waitForTickPlaybackCompletion(result.events?.length ?? 0);
       this.globalEventBus.emit("simulation_status", {
         status: "idle",
         eventCount: result.eventCount,
@@ -115,11 +135,50 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
         tickIntervalMs: this.tickIntervalMs,
       });
     } finally {
-      this.tickInFlight = false;
+      this.playbackInProgress = false;
       if (this.autoPlay) {
         this.nextTickDueAt = this.tickStartedAt + this.tickIntervalMs;
+      } else {
+        this.nextTickDueAt = 0;
       }
     }
+  }
+
+  private async fetchTick(): Promise<TickResponse> {
+    this.requestInFlight = true;
+    try {
+      return await apiClient.simulateTick();
+    } finally {
+      this.requestInFlight = false;
+    }
+  }
+
+  private ensurePrefetch(): void {
+    if (!this.autoPlay || this.prefetchedTick || this.requestInFlight) return;
+    void this.fetchTick()
+      .then((result) => {
+        this.prefetchedTick = result;
+      })
+      .catch((error) => {
+        this.autoPlay = false;
+        this.emitPlaybackState();
+        console.warn("[PlaybackController] Failed to prefetch tick:", error);
+        this.globalEventBus.emit("simulation_status", {
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+          autoPlay: this.autoPlay,
+          tickIntervalMs: this.tickIntervalMs,
+        });
+      });
+  }
+
+  private waitForTickPlaybackCompletion(eventCount: number): Promise<void> {
+    if (eventCount <= 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.globalEventBus.once("tick_playback_complete", () => resolve());
+    });
   }
 
   private emitPlaybackState(): void {

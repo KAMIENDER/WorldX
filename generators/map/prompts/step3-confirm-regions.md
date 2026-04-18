@@ -42,15 +42,23 @@
 
 如果所有区域均可接受：
 ```json
-{ "pass": true, "problematic_region_ids": [] }
+{ "pass": true, "problematic_region_ids": [], "feedback": {} }
 ```
 
 如果有明显问题的区域：
 ```json
-{ "pass": false, "problematic_region_ids": ["有问题的区域id1", "有问题的区域id2"] }
+{
+  "pass": false,
+  "problematic_region_ids": ["有问题的区域id1", "有问题的区域id2"],
+  "feedback": {
+    "有问题的区域id1": "简述该区域标注错误的原因，如：标注位置完全偏离，实际应在地图左下角",
+    "有问题的区域id2": "简述原因"
+  }
+}
 ```
 
 ## 重要
 - 只标记**明显错误**的区域，不要标记"不够完美但基本正确"的区域
-- 被标记的区域会被系统直接移除（变成普通区域），所以请谨慎判断
+- 被标记的区域会被重新标注，所以请谨慎判断
+- `feedback` 中对每个被标记的区域给出**简短具体**的错误原因（一句话即可），用于指导下次标注
 - 如果所有区域都大致正确，请返回 pass: true
