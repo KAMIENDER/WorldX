@@ -11,6 +11,19 @@
   English | <a href="./README.md">中文</a>
 </p>
 
+<p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white" alt="Node.js 18+">
+  <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
+  <img src="https://img.shields.io/badge/Phaser-3-cdf0e8?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDJMMiAyMmgyMEwxMiAyeiIgZmlsbD0iIzMzMyIvPjwvc3ZnPg==" alt="Phaser 3">
+  <img src="https://img.shields.io/badge/Status-Alpha-orange" alt="Alpha">
+  <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg" alt="PRs Welcome">
+</p>
+
+<p align="center">
+  <code>AI Agents</code> · <code>LLM</code> · <code>Procedural Generation</code> · <code>Simulation</code> · <code>Emergent Narrative</code>
+</p>
 
 ---
 
@@ -57,7 +70,7 @@ git clone https://github.com/YGYOOO/WorldX.git
 cd WorldX
 cp .env.example .env
 # Edit .env — fill in SIMULATION_* fields only
-npm install && cd client && npm install && cd ../server && npm install && cd ..
+npm install
 npm run dev
 ```
 
@@ -223,6 +236,10 @@ npm run create       # Generate a new world via CLI
 
 - Client: `http://localhost:3200`
 - Server: `http://localhost:3100`
+
+
+## Thanks
+-  [LinuxDO](https://linux.do/)
 
 ## License
 
