@@ -214,30 +214,6 @@ WorldX/
 └── .env.example          # Configuration template
 ```
 
-## How It Works
-
-### World Generation
-
-1. **Design** — The orchestrator LLM designs the world: regions, characters, social dynamics, time rules
-2. **Map** — AI generates a top-down map image, then localizes walkable areas, regions, and interactive elements through a multi-step review pipeline
-3. **Characters** — AI generates sprite sheets for each character, with automatic chromakey cleanup
-4. **Config** — Everything is bridged into runtime-ready configs (world.json, scene.json, character JSONs, TMJ map)
-
-### Simulation
-
-Each tick, every character:
-1. **Perceives** — sees nearby characters, locations, recent events
-2. **Decides** — chooses an action (move, talk, observe, interact) based on personality and context
-3. **Acts** — executes the decision, potentially triggering dialogue, memory formation, or relationship changes
-4. **Remembers** — stores significant events as memories that influence future behavior
-
-### Timeline System
-
-Each simulation run is recorded as a **timeline** — an independent event stream with its own database. You can:
-- Run multiple timelines for the same world
-- Replay any timeline frame by frame
-- Compare how the same world evolves differently
-
 ## Development
 
 ```bash
