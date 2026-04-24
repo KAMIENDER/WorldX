@@ -13,7 +13,7 @@ import {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const NETWORK_RETRY_DELAY_MS = 1_000;
-const MAX_NETWORK_RETRIES = 2;
+const DEFAULT_NETWORK_RETRIES = 1;
 const DEFAULT_STRUCTURED_OUTPUT_MODE = resolveStructuredOutputMode(
   undefined,
   process.env.SIMULATION_STRUCTURED_OUTPUT_MODE,
@@ -27,6 +27,11 @@ function getRequestTimeoutMs(overrideMs?: number): number {
 
   const n = Number(process.env.SIMULATION_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
+function getNetworkRetries(): number {
+  const n = Number(process.env.SIMULATION_NETWORK_RETRIES);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_NETWORK_RETRIES;
 }
 
 export class LLMClient {
@@ -78,7 +83,7 @@ export class LLMClient {
         // Network-level retry
         let networkRetries = 0;
         let success = false;
-        while (networkRetries < MAX_NETWORK_RETRIES) {
+        while (networkRetries < getNetworkRetries()) {
           networkRetries++;
           await sleep(NETWORK_RETRY_DELAY_MS);
           try {

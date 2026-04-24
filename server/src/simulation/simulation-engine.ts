@@ -46,10 +46,49 @@ function shuffle<T>(arr: T[]): T[] {
 
 const MAX_DIALOGUE_TURNS_PER_TICK = 2;
 const WORLD_ACTION_TARGET_PREFIX = "world_action:";
+const DEFAULT_DECISION_CONCURRENCY = 3;
 
 type TickIntent = {
   decision: ActionDecision;
 };
+
+function getDecisionConcurrency(total: number): number {
+  const n = Number(process.env.SIMULATION_DECISION_CONCURRENCY);
+  const configured = Number.isFinite(n) && n > 0
+    ? Math.floor(n)
+    : DEFAULT_DECISION_CONCURRENCY;
+  return Math.max(1, Math.min(total, configured));
+}
+
+async function allSettledWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(items.length, Math.floor(concurrency)));
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= items.length) return;
+
+        try {
+          results[index] = {
+            status: "fulfilled",
+            value: await worker(items[index], index),
+          };
+        } catch (reason) {
+          results[index] = { status: "rejected", reason };
+        }
+      }
+    }),
+  );
+
+  return results;
+}
 
 export class SimulationEngine {
   private decisionMaker: DecisionMaker;
@@ -450,8 +489,10 @@ export class SimulationEngine {
     gameTime: GameTime,
     events: SimulationEvent[],
   ): Promise<Map<string, TickIntent>> {
-    const results = await Promise.allSettled(
-      charIds.map(async (charId) => {
+    const results = await allSettledWithConcurrency(
+      charIds,
+      getDecisionConcurrency(charIds.length),
+      async (charId) => {
         const perception = buildPerception(
           charId,
           this.worldManager,
@@ -476,7 +517,7 @@ export class SimulationEngine {
         const decision = this.normalizeDecision(rawDecision);
         const intent: TickIntent = { decision };
         return [charId, intent] as const;
-      }),
+      },
     );
 
     const intents = new Map<string, TickIntent>();
