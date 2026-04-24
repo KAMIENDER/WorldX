@@ -59,11 +59,14 @@ router.post("/start", (req: Request, res: Response) => {
     return res.status(400).json({ error: "characterId is required" });
   }
 
-  try {
-    appContext.characterManager.getProfile(characterId);
-  } catch {
-    return res.status(404).json({ error: "character not found" });
-  }
+	  try {
+	    appContext.characterManager.getProfile(characterId);
+	  } catch {
+	    return res.status(404).json({ error: "character not found" });
+	  }
+	  if (!appContext.characterManager.isAlive(characterId)) {
+	    return res.status(410).json({ error: "character is dead" });
+	  }
 
   const id = generateId();
   const now = Date.now();
@@ -105,10 +108,14 @@ router.post("/message", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "message is required" });
   }
 
-  const session = sessions.get(sessionId)!;
-  const userMsg = message.trim();
+	  const session = sessions.get(sessionId)!;
+	  const userMsg = message.trim();
+	  if (!appContext.characterManager.isAlive(session.characterId)) {
+	    sessions.delete(sessionId);
+	    return res.status(410).json({ error: "character is dead" });
+	  }
 
-  const profile = appContext.characterManager.getProfile(session.characterId);
+	  const profile = appContext.characterManager.getProfile(session.characterId);
   const state = appContext.characterManager.getState(session.characterId);
   const gameTime = appContext.worldManager.getCurrentTime();
 

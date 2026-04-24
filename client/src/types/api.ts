@@ -32,6 +32,13 @@ export interface CharacterInfo {
   name: string;
   role: string;
   nickname: string;
+  ageYears: number;
+  lifeStage: string;
+  lifeStageLabel?: string;
+  health: number;
+  bodyCondition: string;
+  bodyConditionLabel?: string;
+  isAlive: boolean;
   location: string;
   mainAreaPointId?: string | null;
   emotion: string;
@@ -58,15 +65,26 @@ export interface CharacterProfile {
 
 export interface CharacterDetail {
   profile: CharacterProfile;
-  state: {
-    location: string;
-    mainAreaPointId?: string | null;
-    currentAction: string | null;
-    currentActionLabel?: string | null;
-    emotionValence: number;
-    emotionArousal: number;
-    curiosity: number;
-  };
+	  state: {
+	    location: string;
+	    mainAreaPointId?: string | null;
+	    currentAction: string | null;
+	    currentActionLabel?: string | null;
+	    emotionValence: number;
+	    emotionArousal: number;
+	    curiosity: number;
+	    ageYears: number;
+	    ageDays: number;
+	    lifeStage: string;
+	    lifeStageLabel?: string;
+	    health: number;
+	    bodyCondition: string;
+	    bodyConditionLabel?: string;
+	    isAlive: boolean;
+	    deathDay: number | null;
+	    deathTick: number | null;
+	    deathCause: string | null;
+	  };
   emotionLabel: string;
 }
 

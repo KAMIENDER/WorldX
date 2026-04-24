@@ -86,9 +86,10 @@ export class PromptBuilder {
       day: String(gameTime.day),
       timeString,
       sceneEndingHint,
-      currentLocation: perception.currentLocation,
-      emotionLabel,
-      currentFocus: params.currentFocus || "",
+	      currentLocation: perception.currentLocation,
+	      emotionLabel,
+	      physicalState: formatPhysicalState(state),
+	      currentFocus: params.currentFocus || "",
       worldSocialContext: formatWorldSocialContext(params.worldSocialContext),
       perceptionText,
       relevantMemories: params.relevantMemories || "（无相关记忆）",
@@ -122,21 +123,23 @@ export class PromptBuilder {
       nameA: a.profile.name,
       roleA: a.profile.role,
       styleA: a.profile.speakingStyle,
-      emotionA: getEmotionLabelSimple(
-        a.state.emotionValence,
-        a.state.emotionArousal,
-      ),
-      memoriesAaboutB: a.memoriesAboutOther || "（无）",
+	      emotionA: getEmotionLabelSimple(
+	        a.state.emotionValence,
+	        a.state.emotionArousal,
+	      ),
+	      physicalA: formatPhysicalState(a.state),
+	      memoriesAaboutB: a.memoriesAboutOther || "（无）",
       motivation: params.initiatorMotivation,
 
       nameB: b.profile.name,
       roleB: b.profile.role,
       styleB: b.profile.speakingStyle,
-      emotionB: getEmotionLabelSimple(
-        b.state.emotionValence,
-        b.state.emotionArousal,
-      ),
-      memoriesBaboutA: b.memoriesAboutOther || "（无）",
+	      emotionB: getEmotionLabelSimple(
+	        b.state.emotionValence,
+	        b.state.emotionArousal,
+	      ),
+	      physicalB: formatPhysicalState(b.state),
+	      memoriesBaboutA: b.memoriesAboutOther || "（无）",
 
       worldSocialContext: formatWorldSocialContext(params.worldSocialContext),
       location,
@@ -179,11 +182,12 @@ export class PromptBuilder {
       idA: a.profile.id,
       roleA: a.profile.role,
       styleA: a.profile.speakingStyle,
-      emotionA: getEmotionLabelSimple(
-        a.state.emotionValence,
-        a.state.emotionArousal,
-      ),
-      memoriesAaboutB: a.memoriesAboutOther || "（无）",
+	      emotionA: getEmotionLabelSimple(
+	        a.state.emotionValence,
+	        a.state.emotionArousal,
+	      ),
+	      physicalA: formatPhysicalState(a.state),
+	      memoriesAaboutB: a.memoriesAboutOther || "（无）",
       hearsayA: params.hearsayA || "（无）",
       motivation: params.initiatorMotivation,
 
@@ -191,11 +195,12 @@ export class PromptBuilder {
       idB: b.profile.id,
       roleB: b.profile.role,
       styleB: b.profile.speakingStyle,
-      emotionB: getEmotionLabelSimple(
-        b.state.emotionValence,
-        b.state.emotionArousal,
-      ),
-      memoriesBaboutA: b.memoriesAboutOther || "（无）",
+	      emotionB: getEmotionLabelSimple(
+	        b.state.emotionValence,
+	        b.state.emotionArousal,
+	      ),
+	      physicalB: formatPhysicalState(b.state),
+	      memoriesBaboutA: b.memoriesAboutOther || "（无）",
       hearsayB: params.hearsayB || "（无）",
 
       worldSocialContext: formatWorldSocialContext(params.worldSocialContext),
@@ -316,9 +321,10 @@ export class PromptBuilder {
       name: profile.name,
       role: profile.role,
       speakingStyle: profile.speakingStyle,
-      coreMotivation: profile.coreMotivation,
-      emotionLabel,
-      memoriesBlock: params.memoriesBlock || "（没什么特别相关的记忆浮上来）",
+	      coreMotivation: profile.coreMotivation,
+	      emotionLabel,
+	      physicalState: formatPhysicalState(state),
+	      memoriesBlock: params.memoriesBlock || "（没什么特别相关的记忆浮上来）",
       iconicCuesBlock: formatIconicCuesBlock(profile),
       userIdentityBlock,
       transcript: transcriptText,
@@ -383,6 +389,28 @@ function getEmotionLabelSimple(valence: number, arousal: number): string {
   return "无聊";
 }
 
+function formatPhysicalState(state: CharacterState): string {
+  const conditionLabel = getBodyConditionLabel(state.bodyCondition);
+  const lifeStageLabel = getLifeStageLabel(state.lifeStage);
+  return `${state.ageYears}岁，${lifeStageLabel}，身体${conditionLabel}，健康值${Math.round(state.health)}/100`;
+}
+
+function getLifeStageLabel(stage: string): string {
+  if (stage === "child") return "儿童";
+  if (stage === "teen") return "少年";
+  if (stage === "elder") return "老年";
+  return "成年";
+}
+
+function getBodyConditionLabel(condition: string): string {
+  if (condition === "tired") return "疲惫";
+  if (condition === "sick") return "生病";
+  if (condition === "injured") return "受伤";
+  if (condition === "critical") return "危重";
+  if (condition === "dead") return "死亡";
+  return "健康";
+}
+
 function formatPerception(p: Perception): string {
   const lines: string[] = [];
   const zoneSuffix = p.myZone ? `，你在${zoneLabel(p.myZone)}` : "";
@@ -410,10 +438,13 @@ function formatPerception(p: Perception): string {
       } else if (c.locationName && c.locationName !== p.currentLocation) {
         detailParts.push(`在${c.locationName}`);
       }
-      if (c.currentAction) {
-        detailParts.push(`正在${c.currentAction}`);
-      }
-      if (c.appearanceHint) {
+	      if (c.currentAction) {
+	        detailParts.push(`正在${c.currentAction}`);
+	      }
+	      if (c.bodyCondition && c.bodyCondition !== "healthy") {
+	        detailParts.push(`身体${getBodyConditionLabel(c.bodyCondition)}`);
+	      }
+	      if (c.appearanceHint) {
         detailParts.push(c.appearanceHint);
       }
       if (c.emotionLabel) {

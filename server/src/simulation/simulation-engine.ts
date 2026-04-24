@@ -126,7 +126,7 @@ export class SimulationEngine {
       return this.finalizeTickEvents(events);
     }
 
-    const allChars = shuffle(this.characterManager.getAllProfiles());
+    const allChars = shuffle(this.characterManager.getAliveProfiles());
 
     for (const char of allChars) {
       events.push(
@@ -272,7 +272,7 @@ export class SimulationEngine {
     const reflectionEvents = await this.runReflection(cycleEndTime);
     events.push(...reflectionEvents);
 
-    this.runEndOfDayDecay(cycleEndTime);
+    events.push(...this.runEndOfDayDecay(cycleEndTime));
 
     this.worldManager.createSnapshot(`Day ${cycleEndTime.day} ended`);
     this.worldManager.resetTransientStateForNewScene();
@@ -312,7 +312,7 @@ export class SimulationEngine {
       Math.round(60 / this.worldManager.getSceneConfig().tickDurationMinutes),
     );
 
-    for (const profile of this.characterManager.getAllProfiles()) {
+    for (const profile of this.characterManager.getAliveProfiles()) {
       try {
         const recentMemories = this.characterManager.memoryManager
           .getMemoriesByDay(profile.id, gameTime.day)
@@ -423,19 +423,19 @@ export class SimulationEngine {
   private resolveId(raw: string): string {
     const trimmed = raw.trim();
 
-    for (const p of this.characterManager.getAllProfiles()) {
+    for (const p of this.characterManager.getAliveProfiles()) {
       if (trimmed === p.id) return p.id;
     }
     for (const loc of this.worldManager.getAllLocations()) {
       if (trimmed === loc.id) return loc.id;
     }
-    for (const p of this.characterManager.getAllProfiles()) {
+    for (const p of this.characterManager.getAliveProfiles()) {
       if (trimmed.includes(p.id)) return p.id;
     }
     for (const loc of this.worldManager.getAllLocations()) {
       if (trimmed.includes(loc.id)) return loc.id;
     }
-    for (const p of this.characterManager.getAllProfiles()) {
+    for (const p of this.characterManager.getAliveProfiles()) {
       if (trimmed.includes(p.name) || trimmed.includes(p.nickname)) return p.id;
     }
     for (const loc of this.worldManager.getAllLocations()) {
@@ -539,8 +539,10 @@ export class SimulationEngine {
     for (const session of sessions) {
       try {
         const [charA, charB] = session.participants;
-        this.characterManager.getState(charA);
-        this.characterManager.getState(charB);
+        if (!this.characterManager.isAlive(charA) || !this.characterManager.isAlive(charB)) {
+          this.worldManager.deleteDialogueSession(session.id);
+          continue;
+        }
 
         if (session.status !== "active") {
           this.worldManager.deleteDialogueSession(session.id);
@@ -555,7 +557,7 @@ export class SimulationEngine {
       }
     }
 
-    for (const state of this.characterManager.getAllStates()) {
+    for (const state of this.characterManager.getAllStates().filter((s) => s.isAlive)) {
       if (
         state.currentAction === "in_conversation" &&
         !activeCharacterIds.has(state.characterId)
@@ -631,6 +633,10 @@ export class SimulationEngine {
       return false;
     }
 
+    if (!this.characterManager.isAlive(charA) || !this.characterManager.isAlive(charB)) {
+      return false;
+    }
+
     const stateA = this.characterManager.getState(charA);
     const stateB = this.characterManager.getState(charB);
     const initiatorProfile = this.characterManager.getProfile(charA);
@@ -646,6 +652,10 @@ export class SimulationEngine {
 
   private isSessionContinuable(session: DialogueSession): boolean {
     const [charA, charB] = session.participants;
+    if (!this.characterManager.isAlive(charA) || !this.characterManager.isAlive(charB)) {
+      return false;
+    }
+
     const stateA = this.characterManager.getState(charA);
     const stateB = this.characterManager.getState(charB);
     return (
@@ -942,7 +952,7 @@ export class SimulationEngine {
   }
 
   private async evaluateRecentMemories(gameTime: GameTime): Promise<void> {
-    const allProfiles = this.characterManager.getAllProfiles();
+    const allProfiles = this.characterManager.getAliveProfiles();
     const pendingMemories: { id: string; content: string }[] = [];
 
     for (const profile of allProfiles) {
@@ -1005,7 +1015,7 @@ export class SimulationEngine {
     gameTime: GameTime,
   ): Promise<SimulationEvent[]> {
     const events: SimulationEvent[] = [];
-    const profiles = this.characterManager.getAllProfiles();
+    const profiles = this.characterManager.getAliveProfiles();
 
     const results = await Promise.allSettled(
       profiles.map(async (profile) => {
@@ -1146,8 +1156,8 @@ export class SimulationEngine {
     }
   }
 
-  private runEndOfDayDecay(gameTime: GameTime): void {
-    for (const profile of this.characterManager.getAllProfiles()) {
+  private runEndOfDayDecay(gameTime: GameTime): SimulationEvent[] {
+    for (const profile of this.characterManager.getAliveProfiles()) {
       try {
         this.characterManager.memoryManager.processMemoryDecay(
           profile.id,
@@ -1163,5 +1173,6 @@ export class SimulationEngine {
         );
       }
     }
+    return this.characterManager.advanceLifeAtEndOfDay(gameTime);
   }
 }

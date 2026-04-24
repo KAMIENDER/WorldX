@@ -122,7 +122,7 @@ export class AppContext {
 
   private getInitFrameCharacters(): InitFrameCharacter[] {
     if (!this.characterManager) return [];
-    return this.characterManager.getAllProfiles().map((profile) => {
+    return this.characterManager.getAliveProfiles().map((profile) => {
       const state = this.characterManager.getState(profile.id);
       return {
         id: profile.id,

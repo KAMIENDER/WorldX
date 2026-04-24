@@ -1,5 +1,23 @@
 import { getDb } from "./db.js";
-import type { CharacterState } from "../types/index.js";
+import type { BodyCondition, CharacterState, LifeStage } from "../types/index.js";
+
+function normalizeLifeStage(value: unknown): LifeStage {
+  return value === "child" || value === "teen" || value === "elder" ? value : "adult";
+}
+
+function normalizeBodyCondition(value: unknown): BodyCondition {
+  if (
+    value === "healthy" ||
+    value === "tired" ||
+    value === "sick" ||
+    value === "injured" ||
+    value === "critical" ||
+    value === "dead"
+  ) {
+    return value;
+  }
+  return "healthy";
+}
 
 function rowToState(row: any): CharacterState {
   return {
@@ -13,6 +31,15 @@ function rowToState(row: any): CharacterState {
     emotionValence: row.emotion_valence,
     emotionArousal: row.emotion_arousal,
     curiosity: row.curiosity,
+    ageYears: row.age_years ?? 30,
+    ageDays: row.age_days ?? 0,
+    lifeStage: normalizeLifeStage(row.life_stage),
+    health: row.health ?? 100,
+    bodyCondition: normalizeBodyCondition(row.body_condition),
+    isAlive: row.is_alive !== 0,
+    deathDay: row.death_day ?? null,
+    deathTick: row.death_tick ?? null,
+    deathCause: row.death_cause ?? null,
     dailyPlan: row.daily_plan ?? null,
   };
 }
@@ -20,25 +47,35 @@ function rowToState(row: any): CharacterState {
 export function initCharacterState(state: CharacterState): void {
   getDb()
     .prepare(
-      `INSERT OR IGNORE INTO character_states
-       (character_id, location, main_area_point_id, current_action, current_action_target,
-        action_start_tick, action_end_tick, emotion_valence, emotion_arousal,
-        curiosity, daily_plan)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      state.characterId,
+	      `INSERT OR IGNORE INTO character_states
+	       (character_id, location, main_area_point_id, current_action, current_action_target,
+	        action_start_tick, action_end_tick, emotion_valence, emotion_arousal,
+	        curiosity, age_years, age_days, life_stage, health, body_condition, is_alive,
+	        death_day, death_tick, death_cause, daily_plan)
+	       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	    )
+	    .run(
+	      state.characterId,
       state.location,
       state.mainAreaPointId,
       state.currentAction,
       state.currentActionTarget,
       state.actionStartTick,
       state.actionEndTick,
-      state.emotionValence,
-      state.emotionArousal,
-      state.curiosity,
-      state.dailyPlan,
-    );
+	      state.emotionValence,
+	      state.emotionArousal,
+	      state.curiosity,
+	      state.ageYears,
+	      state.ageDays,
+	      state.lifeStage,
+	      state.health,
+	      state.bodyCondition,
+	      state.isAlive ? 1 : 0,
+	      state.deathDay,
+	      state.deathTick,
+	      state.deathCause,
+	      state.dailyPlan,
+	    );
 }
 
 export function getCharacterState(id: string): CharacterState {
@@ -92,6 +129,42 @@ export function updateCharacterState(id: string, patch: Partial<CharacterState>)
   if (patch.curiosity !== undefined) {
     sets.push("curiosity = ?");
     params.push(patch.curiosity);
+  }
+  if (patch.ageYears !== undefined) {
+    sets.push("age_years = ?");
+    params.push(patch.ageYears);
+  }
+  if (patch.ageDays !== undefined) {
+    sets.push("age_days = ?");
+    params.push(patch.ageDays);
+  }
+  if (patch.lifeStage !== undefined) {
+    sets.push("life_stage = ?");
+    params.push(patch.lifeStage);
+  }
+  if (patch.health !== undefined) {
+    sets.push("health = ?");
+    params.push(patch.health);
+  }
+  if (patch.bodyCondition !== undefined) {
+    sets.push("body_condition = ?");
+    params.push(patch.bodyCondition);
+  }
+  if (patch.isAlive !== undefined) {
+    sets.push("is_alive = ?");
+    params.push(patch.isAlive ? 1 : 0);
+  }
+  if (patch.deathDay !== undefined) {
+    sets.push("death_day = ?");
+    params.push(patch.deathDay);
+  }
+  if (patch.deathTick !== undefined) {
+    sets.push("death_tick = ?");
+    params.push(patch.deathTick);
+  }
+  if (patch.deathCause !== undefined) {
+    sets.push("death_cause = ?");
+    params.push(patch.deathCause);
   }
   if (patch.dailyPlan !== undefined) {
     sets.push("daily_plan = ?");

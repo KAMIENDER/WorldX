@@ -36,13 +36,15 @@ export function buildPerception(
     };
   });
 
-  const charsAtLoc =
-    state.location === "main_area"
-      ? characterManager.getAllStates().map((s) => ({
-          profile: characterManager.getProfile(s.characterId),
-          state: s,
-        }))
-      : characterManager.getCharactersAtLocation(state.location);
+	  const charsAtLoc =
+	    state.location === "main_area"
+	      ? characterManager.getAllStates()
+	          .filter((s) => s.isAlive)
+	          .map((s) => ({
+	            profile: characterManager.getProfile(s.characterId),
+	            state: s,
+	          }))
+	      : characterManager.getCharactersAtLocation(state.location);
   const hasZones = worldManager.getAvailableMainAreaZones().length > 1;
   const charactersHere = charsAtLoc
     .filter((c) => c.profile.id !== charId)
@@ -58,8 +60,9 @@ export function buildPerception(
       return {
         id: c.profile.id,
         name: c.profile.name,
-        currentAction: c.state.currentAction,
-        appearanceHint: c.profile.appearanceHint,
+	        currentAction: c.state.currentAction,
+	        bodyCondition: c.state.bodyCondition,
+	        appearanceHint: c.profile.appearanceHint,
         locationId: c.state.location,
         locationName: targetLocation,
         emotionLabel: visiblyEmotional

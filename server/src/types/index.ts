@@ -16,6 +16,8 @@ export type {
 
 export type {
   MemoryType,
+  LifeStage,
+  BodyCondition,
   CharacterProfile,
   CharacterAnchor,
   CharacterState,

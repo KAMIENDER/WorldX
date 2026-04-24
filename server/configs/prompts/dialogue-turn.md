@@ -9,6 +9,7 @@
 ## 角色A（发起者）：{{nameA}}（{{idA}} / {{roleA}}）
 - 性格：{{styleA}}
 - 当前情绪：{{emotionA}}
+- 身体状态：{{physicalA}}
 - 关于B的记忆：{{memoriesAaboutB}}
 - 最近听说的事：{{hearsayA}}
 - 发起对话的动机：{{motivation}}
@@ -16,6 +17,7 @@
 ## 角色B：{{nameB}}（{{idB}} / {{roleB}}）
 - 性格：{{styleB}}
 - 当前情绪：{{emotionB}}
+- 身体状态：{{physicalB}}
 - 关于A的记忆：{{memoriesBaboutA}}
 - 最近听说的事：{{hearsayB}}
 

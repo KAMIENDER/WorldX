@@ -13,6 +13,7 @@ export interface CharacterProfile {
   name: string;
   role: string;
   nickname: string;
+  ageYears?: number;
   startPosition: string;
   backstory?: string;
   appearanceHint?: string;
@@ -70,6 +71,9 @@ export interface CanonicalRefs {
 }
 
 /** 角色运行时状态（存 DB，易变层） */
+export type LifeStage = "child" | "teen" | "adult" | "elder";
+export type BodyCondition = "healthy" | "tired" | "sick" | "injured" | "critical" | "dead";
+
 export interface CharacterState {
   characterId: string;
   location: string;
@@ -83,6 +87,16 @@ export interface CharacterState {
   emotionArousal: number;
 
   curiosity: number;
+
+  ageYears: number;
+  ageDays: number;
+  lifeStage: LifeStage;
+  health: number;
+  bodyCondition: BodyCondition;
+  isAlive: boolean;
+  deathDay: number | null;
+  deathTick: number | null;
+  deathCause: string | null;
 
   dailyPlan: string | null;
 }

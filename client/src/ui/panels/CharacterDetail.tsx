@@ -167,12 +167,15 @@ export function CharacterDetail({
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: "#aaa", marginBottom: 8, lineHeight: 1.6, flexShrink: 0 }}>
-        <div>
-          {t("charDetail.location")}: {locationNames[state.location] || state.location} · {t("charDetail.emotion")}: {emotionLabel}
-          {state.currentAction ? ` · ${t("charDetail.action")}: ${state.currentActionLabel || formatActionName(state.currentAction)}` : ""}
-        </div>
-      </div>
+	      <div style={{ fontSize: 11, color: "#aaa", marginBottom: 8, lineHeight: 1.6, flexShrink: 0 }}>
+	        <div>
+	          {t("charDetail.location")}: {locationNames[state.location] || state.location} · {t("charDetail.emotion")}: {emotionLabel}
+	          {state.currentAction ? ` · ${t("charDetail.action")}: ${state.currentActionLabel || formatActionName(state.currentAction)}` : ""}
+	        </div>
+	        <div>
+	          {t("charDetail.age")}: {state.ageYears}{t("charDetail.ageSuffix")} · {t("charDetail.lifeStage")}: {state.lifeStageLabel || formatLifeStage(state.lifeStage)} · {t("charDetail.body")}: {state.bodyConditionLabel || formatBodyCondition(state.bodyCondition)} · {t("charDetail.health")}: {Math.round(state.health)}/100
+	        </div>
+	      </div>
 
       {editFlash && !editing && (
         <div style={{ fontSize: 11, color: "#8df3cf", marginBottom: 6, flexShrink: 0 }}>{editFlash}</div>
@@ -551,3 +554,19 @@ const cancelBtnStyle: CSSProperties = {
   fontSize: 12,
   cursor: "pointer",
 };
+
+function formatLifeStage(stage: string): string {
+  if (stage === "child") return "儿童";
+  if (stage === "teen") return "少年";
+  if (stage === "elder") return "老年";
+  return "成年";
+}
+
+function formatBodyCondition(condition: string): string {
+  if (condition === "tired") return "疲惫";
+  if (condition === "sick") return "生病";
+  if (condition === "injured") return "受伤";
+  if (condition === "critical") return "危重";
+  if (condition === "dead") return "死亡";
+  return "健康";
+}

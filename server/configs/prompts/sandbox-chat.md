@@ -7,6 +7,7 @@
 - 性格与说话风格：{{speakingStyle}}
 - 内在驱动：{{coreMotivation}}
 - 当前情绪：{{emotionLabel}}
+- 身体状态：{{physicalState}}
 
 ## 你记得的事（你此刻能回忆起的、与当前话题相关的片段）
 

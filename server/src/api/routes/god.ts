@@ -49,7 +49,7 @@ router.post("/broadcast", (req: Request, res: Response) => {
 
   let memoryCount = 0;
   if (writeMemory !== false) {
-    const profiles = appContext.characterManager.getAllProfiles();
+    const profiles = appContext.characterManager.getAliveProfiles();
     for (const p of profiles) {
       if (location !== "global") {
         const s = appContext.characterManager.getState(p.id);
@@ -93,11 +93,14 @@ router.post("/whisper", (req: Request, res: Response) => {
     return res.status(400).json({ error: "content is required" });
   }
 
-  try {
-    appContext.characterManager.getProfile(characterId);
-  } catch {
-    return res.status(404).json({ error: "character not found" });
-  }
+	  try {
+	    appContext.characterManager.getProfile(characterId);
+	  } catch {
+	    return res.status(404).json({ error: "character not found" });
+	  }
+	  if (!appContext.characterManager.isAlive(characterId)) {
+	    return res.status(410).json({ error: "character is dead" });
+	  }
 
   const gameTime = appContext.worldManager.getCurrentTime();
   const memoryType: MemoryType =

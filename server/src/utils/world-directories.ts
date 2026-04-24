@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const GENERATED_WORLDS_DIR = path.resolve(__dirname, "../../../output/worlds");
 export const LIBRARY_WORLDS_DIR = path.resolve(__dirname, "../../../library/worlds");
+const DEFAULT_LIBRARY_WORLD_ID = "world_2026-04-19T08-31-24";
 
 export type WorldSource = "user" | "library";
 
@@ -22,8 +23,13 @@ export function resolveInitialWorldDir(): string | undefined {
     return path.resolve(fromEnv);
   }
 
-  const allWorlds = listAllWorlds();
-  return allWorlds[0]?.dir;
+  const userWorlds = listGeneratedWorlds();
+  if (userWorlds.length > 0) {
+    return userWorlds[0].dir;
+  }
+
+  const libraryWorlds = listLibraryWorlds();
+  return libraryWorlds.find((world) => world.id === DEFAULT_LIBRARY_WORLD_ID)?.dir ?? libraryWorlds[0]?.dir;
 }
 
 export function listGeneratedWorlds(): GeneratedWorldSummary[] {

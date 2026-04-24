@@ -47,7 +47,7 @@ export function buildActionMenu(
 
   // Build anchor map: objectId / regionId → anchored character id
   const anchorCharMap = new Map<string, string>();
-  for (const p of characterManager.getAllProfiles()) {
+  for (const p of characterManager.getAliveProfiles()) {
     if (p.anchor) {
       anchorCharMap.set(p.anchor.targetId, p.id);
     }

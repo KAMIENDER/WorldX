@@ -10,6 +10,7 @@
 ## 你现在的状态
 - 位置：{{currentLocation}}
 - 情绪：{{emotionLabel}}
+- 身体：{{physicalState}}
 
 ## 你最近在意的事
 {{currentFocus}}

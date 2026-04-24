@@ -9,7 +9,7 @@ const router = Router();
 
 // GET /characters
 router.get("/", (_req, res) => {
-  const profiles = appContext.characterManager.getAllProfiles();
+  const profiles = appContext.characterManager.getAliveProfiles();
   const result = profiles.map((p) => {
     const s = appContext.characterManager.getState(p.id);
     const currentActionLabel = resolveActionLabel({
@@ -26,12 +26,19 @@ router.get("/", (_req, res) => {
       nickname: p.nickname,
       location: s.location,
       mainAreaPointId: s.mainAreaPointId,
-      emotion: getEmotionLabel(s.emotionValence, s.emotionArousal),
-      currentAction: s.currentAction,
-      currentActionLabel,
-      anchor: p.anchor || null,
-    };
-  });
+	      emotion: getEmotionLabel(s.emotionValence, s.emotionArousal),
+	      currentAction: s.currentAction,
+	      currentActionLabel,
+	      ageYears: s.ageYears,
+	      lifeStage: s.lifeStage,
+	      lifeStageLabel: getLifeStageLabel(s.lifeStage),
+	      health: s.health,
+	      bodyCondition: s.bodyCondition,
+	      bodyConditionLabel: getBodyConditionLabel(s.bodyCondition),
+	      isAlive: s.isAlive,
+	      anchor: p.anchor || null,
+	    };
+	  });
   res.json(result);
 });
 
@@ -49,10 +56,12 @@ router.get("/:id", (req, res) => {
     });
     res.json({
       profile,
-      state: {
-        ...state,
-        currentActionLabel,
-      },
+	      state: {
+	        ...state,
+	        currentActionLabel,
+	        lifeStageLabel: getLifeStageLabel(state.lifeStage),
+	        bodyConditionLabel: getBodyConditionLabel(state.bodyCondition),
+	      },
       emotionLabel: getEmotionLabel(state.emotionValence, state.emotionArousal),
     });
   } catch {
@@ -124,3 +133,19 @@ router.get("/:id/memories", (req, res) => {
 });
 
 export default router;
+
+function getLifeStageLabel(stage: string): string {
+  if (stage === "child") return "儿童";
+  if (stage === "teen") return "少年";
+  if (stage === "elder") return "老年";
+  return "成年";
+}
+
+function getBodyConditionLabel(condition: string): string {
+  if (condition === "tired") return "疲惫";
+  if (condition === "sick") return "生病";
+  if (condition === "injured") return "受伤";
+  if (condition === "critical") return "危重";
+  if (condition === "dead") return "死亡";
+  return "健康";
+}

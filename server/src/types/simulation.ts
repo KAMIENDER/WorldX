@@ -12,7 +12,8 @@ export type SimEventType =
   | "event_triggered"
   | "diary_entry"
   | "daily_plan"
-  | "reflection";
+  | "reflection"
+  | "life_status";
 
 export interface SimulationEvent {
   id: string;
@@ -101,6 +102,7 @@ export interface Perception {
     name: string;
     currentAction: string | null;
     emotionLabel?: string;
+    bodyCondition?: string;
     appearanceHint?: string;
     locationId?: string;
     locationName?: string;

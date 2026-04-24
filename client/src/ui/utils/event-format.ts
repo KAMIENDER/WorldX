@@ -12,6 +12,7 @@ const EVENT_TYPE_KEY_MAP: Record<string, string> = {
   emotion_shift: "eventFormat.typeEmotionShift",
   reflection: "eventFormat.typeReflection",
   memory_formed: "eventFormat.typeMemoryFormed",
+  life_status: "eventFormat.typeLifeStatus",
 };
 
 const ACTION_KEY_MAP: Record<string, string> = {
@@ -134,6 +135,13 @@ export function formatEventSummary(
       return actorName
         ? t("eventFormat.memoryFormed", { name: actorName })
         : t("eventFormat.memoryNoName");
+    case "life_status":
+      if (event.data?.status === "dead") {
+        return actorName
+          ? t("eventFormat.death", { name: actorName, cause: event.data?.cause || t("eventFormat.unknownCause") })
+          : t("eventFormat.deathNoName", { cause: event.data?.cause || t("eventFormat.unknownCause") });
+      }
+      return actorName ? t("eventFormat.lifeStatus", { name: actorName }) : t("eventFormat.lifeStatusNoName");
     case "event_triggered":
       return event.data?.title || event.data?.name || event.data?.summary || t("eventFormat.eventTriggeredFallback");
     default:

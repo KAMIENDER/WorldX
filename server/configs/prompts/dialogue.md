@@ -8,12 +8,14 @@
 ## 角色A（发起者）：{{nameA}}（{{roleA}}）
 - 性格：{{styleA}}
 - 当前情绪：{{emotionA}}
+- 身体状态：{{physicalA}}
 - 关于B的记忆：{{memoriesAaboutB}}
 - 发起对话的动机：{{motivation}}
 
 ## 角色B：{{nameB}}（{{roleB}}）
 - 性格：{{styleB}}
 - 当前情绪：{{emotionB}}
+- 身体状态：{{physicalB}}
 - 关于A的记忆：{{memoriesBaboutA}}
 
 ## 世界背景

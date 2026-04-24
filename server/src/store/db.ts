@@ -56,11 +56,20 @@ CREATE TABLE IF NOT EXISTS character_states (
   action_start_tick INTEGER DEFAULT 0,
   action_end_tick INTEGER DEFAULT 0,
   emotion_valence REAL DEFAULT 0,
-  emotion_arousal REAL DEFAULT 3,
-  curiosity REAL DEFAULT 100,
-  daily_plan TEXT,
-  updated_at TEXT DEFAULT (datetime('now'))
-);
+	  emotion_arousal REAL DEFAULT 3,
+	  curiosity REAL DEFAULT 100,
+	  age_years INTEGER DEFAULT 30,
+	  age_days INTEGER DEFAULT 0,
+	  life_stage TEXT DEFAULT 'adult',
+	  health REAL DEFAULT 100,
+	  body_condition TEXT DEFAULT 'healthy',
+	  is_alive INTEGER DEFAULT 1,
+	  death_day INTEGER,
+	  death_tick INTEGER,
+	  death_cause TEXT,
+	  daily_plan TEXT,
+	  updated_at TEXT DEFAULT (datetime('now'))
+	);
 
 CREATE TABLE IF NOT EXISTS world_object_states (
   object_id TEXT PRIMARY KEY,
@@ -156,6 +165,29 @@ function runMigrations(database: Database.Database): void {
     .some((col: any) => col.name === "main_area_point_id");
   if (!hasMainAreaPointId) {
     database.exec(`ALTER TABLE character_states ADD COLUMN main_area_point_id TEXT DEFAULT NULL`);
+  }
+
+  const characterStateColumns = new Set(
+    database
+      .prepare(`PRAGMA table_info(character_states)`)
+      .all()
+      .map((col: any) => col.name),
+  );
+  const migrations: Array<[string, string]> = [
+    ["age_years", `ALTER TABLE character_states ADD COLUMN age_years INTEGER DEFAULT 30`],
+    ["age_days", `ALTER TABLE character_states ADD COLUMN age_days INTEGER DEFAULT 0`],
+    ["life_stage", `ALTER TABLE character_states ADD COLUMN life_stage TEXT DEFAULT 'adult'`],
+    ["health", `ALTER TABLE character_states ADD COLUMN health REAL DEFAULT 100`],
+    ["body_condition", `ALTER TABLE character_states ADD COLUMN body_condition TEXT DEFAULT 'healthy'`],
+    ["is_alive", `ALTER TABLE character_states ADD COLUMN is_alive INTEGER DEFAULT 1`],
+    ["death_day", `ALTER TABLE character_states ADD COLUMN death_day INTEGER DEFAULT NULL`],
+    ["death_tick", `ALTER TABLE character_states ADD COLUMN death_tick INTEGER DEFAULT NULL`],
+    ["death_cause", `ALTER TABLE character_states ADD COLUMN death_cause TEXT DEFAULT NULL`],
+  ];
+  for (const [column, sql] of migrations) {
+    if (!characterStateColumns.has(column)) {
+      database.exec(sql);
+    }
   }
 }
 
