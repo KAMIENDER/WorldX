@@ -2,13 +2,32 @@
   "id": "char_1776587596844",
   "name": "苏捕头",
   "role": "片区捕快",
+  "ageYears": 33,
+  "genderLabel": "女",
+  "socialClass": "官府差役",
+  "occupation": "巡街捕头",
+  "homeLocation": "main_area",
+  "workLocation": "main_area",
+  "family": [
+    "父亲曾是老捕快，因伤退下后靠她养家",
+    "家中还有一个正在读书的弟弟"
+  ],
+  "personalityTraits": [
+    "冷静",
+    "重证据",
+    "责任心强",
+    "问话直接",
+    "不轻易相信传闻"
+  ],
+  "longTermGoals": [
+    "查清近期连环盗案",
+    "证明自己能独当一面",
+    "让夜市商户重新信任官府巡防"
+  ],
   "personality": "干练果决，观察力敏锐，公正严明，做事雷厉风行。",
   "appearanceHint": "穿着公服，腰挂佩刀，看着像是当差办差的人。",
   "motivation": "查清当铺失窃案，将小偷捉拿归案，维护夜市治安。",
   "socialStyle": "ambivert，平时话不多，查案时问话犀利，逻辑清晰。",
-  "traits": [
-    "complex"
-  ],
   "startPosition": {
     "tileX": 120,
     "tileY": 101,

@@ -383,8 +383,24 @@ export const apiClient = {
     return postJSON("/timelines");
   },
 
+  createManualSave(params: {
+    name?: string;
+    note?: string;
+  }): Promise<{ ok: boolean; timeline: TimelineMeta }> {
+    return postJSON("/timelines/save", params);
+  },
+
   loadTimeline(timelineId: string): Promise<{ ok: boolean }> {
     return postJSON(`/timelines/${encodeURIComponent(timelineId)}/load`);
+  },
+
+  loadTimelineFromWorld(
+    worldId: string,
+    timelineId: string,
+  ): Promise<{ ok: boolean }> {
+    return postJSON(
+      `/timelines/world/${encodeURIComponent(worldId)}/${encodeURIComponent(timelineId)}/load`,
+    );
   },
 
   deleteTimeline(timelineId: string): Promise<{ ok: boolean }> {

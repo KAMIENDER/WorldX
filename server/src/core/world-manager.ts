@@ -53,9 +53,9 @@ export class WorldManager {
 
   constructor() {}
 
-  initialize(worldDirPath?: string): void {
+  initialize(worldDirPath?: string, configSnapshotDirPath?: string | null): void {
     if (worldDirPath) {
-      setWorldDir(worldDirPath);
+      setWorldDir(worldDirPath, configSnapshotDirPath);
     }
     const config = loadWorldConfig();
     this.locationConfigs = normalizeLocations(

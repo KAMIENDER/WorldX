@@ -140,6 +140,19 @@ export function executeAction(
     }
 
     case "talk_to": {
+      try {
+        characterManager.getProfile(decision.targetId);
+        characterManager.adjustRelationship(charId, decision.targetId, {
+          familiarity: 3,
+          affinity: 1,
+          trust: 1,
+        }, "最近主动交谈过");
+        characterManager.adjustRelationship(decision.targetId, charId, {
+          familiarity: 2,
+        }, "最近被对方搭话");
+      } catch {
+        // Relationship updates should never block the visible action.
+      }
       events.push({
         id: generateId(),
         gameDay: gameTime.day,

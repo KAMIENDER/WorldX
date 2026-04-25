@@ -252,6 +252,15 @@ export class DialogueGenerator {
     const tags = Array.from(
       new Set(["dialogue", ...session.tags, ...(llmOutput.tags || [])]),
     );
+    const isConflict = tags.some((tag) => /conflict|argue|threat|冲突|争吵|威胁/i.test(tag));
+    const isWarm = tags.some((tag) => /trust|warm|comfort|help|信任|安慰|帮助|友好/i.test(tag));
+    const relDelta = isConflict
+      ? { familiarity: 4, affinity: -4, trust: -3, conflict: 4 }
+      : isWarm
+        ? { familiarity: 4, affinity: 3, trust: 3 }
+        : { familiarity: 3, affinity: 1, trust: 1 };
+    this.characterManager.adjustRelationship(initiatorId, responderId, relDelta, "最近有过一段对话");
+    this.characterManager.adjustRelationship(responderId, initiatorId, relDelta, "最近有过一段对话");
 
     this.characterManager.memoryManager.addMemory({
       characterId: initiatorId,

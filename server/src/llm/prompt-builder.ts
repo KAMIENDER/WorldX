@@ -67,6 +67,7 @@ export class PromptBuilder {
     actionMenu: string;
     currentFocus?: string;
     worldSocialContext?: string;
+    relationshipContext?: string;
   }): Message[] {
     const { profile, state, gameTime, perception } = params;
 
@@ -83,6 +84,7 @@ export class PromptBuilder {
     const content = this.build("reactive-decision", {
       name: profile.name,
       role: profile.role,
+      lifeProfile: formatLifeProfile(profile),
       speakingStyle: profile.speakingStyle,
       day: String(gameTime.day),
       timeString,
@@ -91,6 +93,7 @@ export class PromptBuilder {
 	      emotionLabel,
 	      physicalState: formatPhysicalState(state),
 	      currentFocus: params.currentFocus || "",
+      relationshipContext: params.relationshipContext || "（暂无明确关系记录）",
       worldSocialContext: formatWorldSocialContext(params.worldSocialContext),
       perceptionText,
       relevantMemories: params.relevantMemories || "（无相关记忆）",
@@ -415,7 +418,22 @@ function getEmotionLabelSimple(valence: number, arousal: number): string {
 function formatPhysicalState(state: CharacterState): string {
   const conditionLabel = getBodyConditionLabel(state.bodyCondition);
   const lifeStageLabel = getLifeStageLabel(state.lifeStage);
-  return `${state.ageYears}岁，${lifeStageLabel}，身体${conditionLabel}，健康值${Math.round(state.health)}/100`;
+  const goal = state.shortTermGoal ? `，当前目标：${state.shortTermGoal}` : "";
+  return `${state.ageYears}岁，${lifeStageLabel}，身体${conditionLabel}，健康值${Math.round(state.health)}/100，体力${Math.round(state.energy)}/100，饥饿${Math.round(state.hunger)}/100，压力${Math.round(state.stress)}/100，钱${Math.round(state.money)}${goal}`;
+}
+
+function formatLifeProfile(profile: CharacterProfile): string {
+  const parts = [
+    profile.genderLabel ? `称谓/性别：${profile.genderLabel}` : "",
+    profile.socialClass ? `社会身份：${profile.socialClass}` : "",
+    profile.occupation ? `职业：${profile.occupation}` : "",
+    profile.homeLocation ? `住处：${profile.homeLocation}` : "",
+    profile.workLocation ? `工作地：${profile.workLocation}` : "",
+    profile.family.length > 0 ? `家庭/牵挂：${profile.family.join("；")}` : "",
+    profile.personalityTraits.length > 0 ? `性格特质：${profile.personalityTraits.join("、")}` : "",
+    profile.longTermGoals.length > 0 ? `长期目标：${profile.longTermGoals.join("；")}` : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join("\n") : "（暂无更细身份资料）";
 }
 
 function getLifeStageLabel(stage: string): string {

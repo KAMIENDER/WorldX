@@ -1,6 +1,7 @@
 import type {
   BodyCondition,
   CharacterProfile,
+  CharacterRelationship,
   CharacterState,
   GameTime,
   LifeStage,
@@ -11,6 +12,7 @@ import type { WorldManager } from "./world-manager.js";
 import { loadCharacterProfiles } from "../utils/config-loader.js";
 import { generateId } from "../utils/id-generator.js";
 import * as charStateStore from "../store/character-state-store.js";
+import * as relationshipStore from "../store/character-relationship-store.js";
 import { MemoryManager } from "./memory-manager.js";
 import { decayNeeds } from "./needs-manager.js";
 import { decayEmotion } from "./emotion-manager.js";
@@ -46,6 +48,7 @@ export class CharacterManager {
         occupiedPointIds.add(state.mainAreaPointId);
       }
       charStateStore.initCharacterState(state);
+      backfillNewNeedsState(profile, state);
 
       for (const initMem of profile.initialMemories) {
         if (
@@ -97,6 +100,7 @@ export class CharacterManager {
       }
     }
 
+    initializeRelationshipGraph(profiles);
   }
 
   getProfile(charId: string): CharacterProfile {
@@ -125,6 +129,8 @@ export class CharacterManager {
   static readonly EDITABLE_FIELDS = [
     "coreMotivation", "coreValues", "speakingStyle",
     "fears", "backstory", "socialStyle", "tags",
+    "genderLabel", "socialClass", "occupation", "homeLocation", "workLocation",
+    "family", "personalityTraits", "longTermGoals",
   ] as const;
 
   patchProfile(
@@ -176,6 +182,11 @@ export class CharacterManager {
         emotionValence: initialState.emotionValence,
         emotionArousal: initialState.emotionArousal,
         curiosity: initialState.curiosity,
+        energy: initialState.energy,
+        hunger: initialState.hunger,
+        stress: initialState.stress,
+        money: initialState.money,
+        shortTermGoal: initialState.shortTermGoal,
         dailyPlan: initialState.dailyPlan,
       });
     }
@@ -183,6 +194,44 @@ export class CharacterManager {
 
   updateState(charId: string, patch: Partial<CharacterState>): void {
     charStateStore.updateCharacterState(charId, patch);
+  }
+
+  getRelationships(charId: string): CharacterRelationship[] {
+    return relationshipStore.getRelationshipsFor(charId);
+  }
+
+  getRelationship(sourceCharacterId: string, targetCharacterId: string): CharacterRelationship | null {
+    return relationshipStore.getRelationship(sourceCharacterId, targetCharacterId);
+  }
+
+  adjustRelationship(
+    sourceCharacterId: string,
+    targetCharacterId: string,
+    delta: Partial<Record<"familiarity" | "affinity" | "trust" | "fear" | "conflict" | "debt", number>>,
+    note?: string,
+  ): void {
+    relationshipStore.adjustRelationship(sourceCharacterId, targetCharacterId, delta, note);
+  }
+
+  getRelationshipSummary(sourceCharacterId: string, targetIds: string[]): string {
+    const lines = targetIds
+      .map((targetId) => {
+        const rel = relationshipStore.getRelationship(sourceCharacterId, targetId);
+        const profile = this.profiles.get(targetId);
+        if (!rel || !profile) return null;
+        const parts = [
+          `熟悉度${Math.round(rel.familiarity)}`,
+          `好感${Math.round(rel.affinity)}`,
+          `信任${Math.round(rel.trust)}`,
+        ];
+        if (rel.fear > 0) parts.push(`畏惧${Math.round(rel.fear)}`);
+        if (rel.conflict > 0) parts.push(`冲突${Math.round(rel.conflict)}`);
+        if (rel.debt !== 0) parts.push(`恩债${Math.round(rel.debt)}`);
+        if (rel.notes) parts.push(rel.notes);
+        return `- ${profile.name}：${parts.join("，")}`;
+      })
+      .filter((line): line is string => Boolean(line));
+    return lines.length > 0 ? lines.join("\n") : "（眼前的人暂无明确关系记录）";
   }
 
   tickPassiveUpdate(charId: string, currentTime: GameTime): SimulationEvent[] {
@@ -313,6 +362,81 @@ function rowToDiary(row: any): DiaryEntry {
   };
 }
 
+function initializeRelationshipGraph(profiles: CharacterProfile[]): void {
+  for (const source of profiles) {
+    for (const target of profiles) {
+      if (source.id === target.id) continue;
+      relationshipStore.initRelationship(inferInitialRelationship(source, target));
+    }
+  }
+}
+
+function backfillNewNeedsState(profile: CharacterProfile, initialState: CharacterState): void {
+  let persisted: CharacterState;
+  try {
+    persisted = charStateStore.getCharacterState(profile.id);
+  } catch {
+    return;
+  }
+
+  const looksLikeMigrationDefault =
+    persisted.energy === 80 &&
+    persisted.hunger === 20 &&
+    persisted.stress === 20 &&
+    persisted.money === 0 &&
+    !persisted.shortTermGoal;
+  if (!looksLikeMigrationDefault) return;
+
+  charStateStore.updateCharacterState(profile.id, {
+    energy: initialState.energy,
+    hunger: initialState.hunger,
+    stress: initialState.stress,
+    money: initialState.money,
+    shortTermGoal: initialState.shortTermGoal,
+  });
+}
+
+function inferInitialRelationship(
+  source: CharacterProfile,
+  target: CharacterProfile,
+): CharacterRelationship {
+  const sourceText = [
+    source.backstory,
+    source.coreMotivation,
+    ...source.initialMemories.map((memory) => memory.content),
+    ...source.family,
+  ].join(" ");
+  const mentionsTarget =
+    sourceText.includes(target.name) ||
+    sourceText.includes(target.nickname) ||
+    sourceText.includes(target.role);
+  const sameHome =
+    !!source.homeLocation &&
+    !!target.homeLocation &&
+    source.homeLocation === target.homeLocation;
+  const sameWork =
+    !!source.workLocation &&
+    !!target.workLocation &&
+    source.workLocation === target.workLocation;
+  const sameStart = source.startPosition === target.startPosition;
+
+  const baseFamiliarity = mentionsTarget ? 45 : sameHome || sameWork ? 32 : sameStart ? 18 : 6;
+  const positive = /亲|友|帮|恩|信任|喜欢|照顾|friend|trust|help|care/i.test(sourceText);
+  const negative = /仇|恨|怕|偷|骗|冲突|怀疑|enemy|fear|hate|stole|suspect/i.test(sourceText);
+
+  return {
+    sourceCharacterId: source.id,
+    targetCharacterId: target.id,
+    familiarity: baseFamiliarity,
+    affinity: positive ? 24 : negative ? -18 : hashInt(`${source.id}:${target.id}:affinity`, 17) - 8,
+    trust: positive ? 18 : negative ? -22 : hashInt(`${source.id}:${target.id}:trust`, 15) - 7,
+    fear: /怕|惧|威胁|fear|threat/i.test(sourceText) ? 20 : 0,
+    conflict: negative ? 22 : 0,
+    debt: /恩|欠|债|debt|owe/i.test(sourceText) ? 12 : 0,
+    notes: mentionsTarget ? "已有背景关联" : "",
+  };
+}
+
 function buildInitialCharacterState(
   profile: CharacterProfile,
   worldManager: WorldManager,
@@ -346,6 +470,7 @@ function buildInitialCharacterState(
     emotionValence: 1,
     emotionArousal: clampStat(3 + profile.extraversionLevel * 2),
     curiosity: clampStat(64 + profile.intuitionLevel * 20),
+    ...buildInitialNeedsState(profile),
     ...buildInitialLifeState(profile),
     dailyPlan: null,
   };
@@ -353,6 +478,29 @@ function buildInitialCharacterState(
 
 function clampStat(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function buildInitialNeedsState(profile: CharacterProfile): Pick<
+  CharacterState,
+  "energy" | "hunger" | "stress" | "money" | "shortTermGoal"
+> {
+  const age = inferInitialAge(profile);
+  const text = `${profile.name} ${profile.role} ${profile.socialClass ?? ""} ${profile.backstory ?? ""} ${profile.tags.join(" ")}`;
+  const money =
+    /富|掌柜|老板|商|wealth|rich|merchant|owner/i.test(text) ? 45 + hashInt(profile.id, 45)
+      : /乞|贫|穷|小偷|beggar|poor|thief/i.test(text) ? hashInt(profile.id, 12)
+        : 12 + hashInt(profile.id, 32);
+  const ageEnergyPenalty = age >= 70 ? 18 : age >= 55 ? 8 : 0;
+  return {
+    energy: clampStat(82 - ageEnergyPenalty + hashInt(`${profile.id}:energy`, 12)),
+    hunger: clampStat(18 + hashInt(`${profile.id}:hunger`, 18)),
+    stress: clampStat(
+      (/债|怕|失窃|逃|嫌疑|trouble|debt|fear|lost/i.test(text) ? 36 : 18) +
+        hashInt(`${profile.id}:stress`, 18),
+    ),
+    money: clampStat(money),
+    shortTermGoal: profile.longTermGoals[0] ?? profile.coreMotivation ?? null,
+  };
 }
 
 function buildInitialLifeState(profile: CharacterProfile): Pick<
@@ -421,6 +569,10 @@ function computeDailyLifeUpdate(
   if (state.bodyCondition === "critical") healthDelta -= 8;
   if (ageYears >= 90) healthDelta -= 2;
   else if (ageYears >= 75) healthDelta -= 1;
+  if (state.hunger >= 92) healthDelta -= 4;
+  else if (state.hunger >= 78) healthDelta -= 2;
+  if (state.energy <= 10) healthDelta -= 2;
+  if (state.stress >= 88) healthDelta -= 2;
 
   let bodyCondition = state.bodyCondition;
   const illnessRisk = ageYears >= 85 ? 0.06 : ageYears >= 65 ? 0.025 : 0.006;
@@ -456,6 +608,9 @@ function computeDailyLifeUpdate(
       lifeStage: getLifeStage(ageYears),
       health,
       bodyCondition,
+      energy: clampStat(state.energy + 8),
+      hunger: clampStat(state.hunger - 22),
+      stress: clampStat(state.stress - 6),
     },
   };
 }

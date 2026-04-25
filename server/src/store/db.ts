@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS character_states (
   emotion_valence REAL DEFAULT 0,
 	  emotion_arousal REAL DEFAULT 3,
 	  curiosity REAL DEFAULT 100,
+	  energy REAL DEFAULT 80,
+	  hunger REAL DEFAULT 20,
+	  stress REAL DEFAULT 20,
+	  money REAL DEFAULT 0,
+	  short_term_goal TEXT,
 	  age_years INTEGER DEFAULT 30,
 	  age_days INTEGER DEFAULT 0,
 	  life_stage TEXT DEFAULT 'adult',
@@ -70,6 +75,21 @@ CREATE TABLE IF NOT EXISTS character_states (
 	  daily_plan TEXT,
 	  updated_at TEXT DEFAULT (datetime('now'))
 	);
+
+CREATE TABLE IF NOT EXISTS character_relationships (
+  source_character_id TEXT NOT NULL,
+  target_character_id TEXT NOT NULL,
+  familiarity REAL DEFAULT 0,
+  affinity REAL DEFAULT 0,
+  trust REAL DEFAULT 0,
+  fear REAL DEFAULT 0,
+  conflict REAL DEFAULT 0,
+  debt REAL DEFAULT 0,
+  notes TEXT DEFAULT '',
+  updated_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (source_character_id, target_character_id)
+);
+CREATE INDEX IF NOT EXISTS idx_character_relationships_source ON character_relationships(source_character_id);
 
 CREATE TABLE IF NOT EXISTS world_object_states (
   object_id TEXT PRIMARY KEY,
@@ -175,6 +195,11 @@ function runMigrations(database: Database.Database): void {
   );
   const migrations: Array<[string, string]> = [
     ["age_years", `ALTER TABLE character_states ADD COLUMN age_years INTEGER DEFAULT 30`],
+    ["energy", `ALTER TABLE character_states ADD COLUMN energy REAL DEFAULT 80`],
+    ["hunger", `ALTER TABLE character_states ADD COLUMN hunger REAL DEFAULT 20`],
+    ["stress", `ALTER TABLE character_states ADD COLUMN stress REAL DEFAULT 20`],
+    ["money", `ALTER TABLE character_states ADD COLUMN money REAL DEFAULT 0`],
+    ["short_term_goal", `ALTER TABLE character_states ADD COLUMN short_term_goal TEXT DEFAULT NULL`],
     ["age_days", `ALTER TABLE character_states ADD COLUMN age_days INTEGER DEFAULT 0`],
     ["life_stage", `ALTER TABLE character_states ADD COLUMN life_stage TEXT DEFAULT 'adult'`],
     ["health", `ALTER TABLE character_states ADD COLUMN health REAL DEFAULT 100`],

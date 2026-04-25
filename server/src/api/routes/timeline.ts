@@ -66,6 +66,25 @@ router.post("/", (_req, res) => {
   }
 });
 
+// POST /timelines/save — snapshot current timeline into a named manual save slot
+router.post("/save", async (req, res) => {
+  const worldDir = appContext.getWorldDir();
+  if (!worldDir) {
+    res.status(503).json({ error: "No world loaded" });
+    return;
+  }
+
+  try {
+    const timeline = await appContext.createManualSave({
+      name: req.body?.name,
+      note: req.body?.note,
+    });
+    res.json({ ok: true, timeline });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // POST /timelines/:id/load — switch to this timeline
 router.post("/:id/load", (req, res) => {
   const worldDir = appContext.getWorldDir();
@@ -83,6 +102,35 @@ router.post("/:id/load", (req, res) => {
 
   try {
     appContext.switchTimeline(timelineId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// POST /timelines/world/:worldId/:timelineId/load — switch world and load a save/timeline
+router.post("/world/:worldId/:timelineId/load", (req, res) => {
+  const { worldId, timelineId } = req.params;
+
+  if (!worldId || worldId.includes("..") || worldId.includes("/")) {
+    res.status(400).json({ error: "Invalid world id" });
+    return;
+  }
+
+  const world = findWorldById(worldId);
+  if (!world) {
+    res.status(404).json({ error: "World not found" });
+    return;
+  }
+
+  const timelines = appContext.timelineManager.listTimelines(world.dir);
+  if (!timelines.find((t) => t.id === timelineId)) {
+    res.status(404).json({ error: "Timeline not found" });
+    return;
+  }
+
+  try {
+    appContext.switchWorldTimeline(world.dir, timelineId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });

@@ -2,13 +2,32 @@
   "id": "char_1776587555212",
   "name": "王掌柜",
   "role": "当铺经营者",
+  "ageYears": 46,
+  "genderLabel": "男",
+  "socialClass": "中等商户",
+  "occupation": "当铺掌柜",
+  "homeLocation": "pawn_shop",
+  "workLocation": "pawn_shop",
+  "family": [
+    "妻子带着小儿住在城西租屋里，平日很少到夜市来",
+    "老母身体不好，每月药钱都靠当铺周转"
+  ],
+  "personalityTraits": [
+    "精明",
+    "重信誉",
+    "疑心重",
+    "遇到损失会急躁",
+    "对老主顾有情面"
+  ],
+  "longTermGoals": [
+    "守住当铺十年来积攒的信誉",
+    "给小儿攒出读书束脩",
+    "查清失窃案但不想把铺子名声闹坏"
+  ],
   "personality": "精打细算，性子有些急躁，最近因失窃心神不宁，对陌生人有防备心。",
   "appearanceHint": "穿着整洁的长袍，腰间挂着一串钥匙，看着像开店的老板。",
   "motivation": "找回被偷的贵重典当品，减少当铺损失。",
   "socialStyle": "ambivert，对熟客热情周到，遇到烦心事容易烦躁易怒。",
-  "traits": [
-    "complex"
-  ],
   "startPosition": {
     "tileX": 89,
     "tileY": 54,

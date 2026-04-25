@@ -4,6 +4,7 @@ import type { WorldConfig, CharacterProfile, SceneConfig } from "../types/index.
 import type { IconicCues, CanonicalRefs, CharacterAnchor } from "../types/character.js";
 
 let worldDir: string | null = null;
+let worldConfigSnapshotDir: string | null = null;
 let cachedWorldConfig: WorldConfig | null = null;
 let cachedCharacterProfiles: CharacterProfile[] | null = null;
 let cachedPromptTemplates: Map<string, string> = new Map();
@@ -13,8 +14,9 @@ const CONFIGS_DIR = fs.existsSync(path.resolve("configs"))
   ? path.resolve("configs")
   : path.resolve("../configs");
 
-export function setWorldDir(dir: string): void {
+export function setWorldDir(dir: string, snapshotDir?: string | null): void {
   worldDir = dir;
+  worldConfigSnapshotDir = snapshotDir ?? null;
   reloadConfigs();
 }
 
@@ -26,6 +28,8 @@ export function loadWorldConfig(): WorldConfig {
   if (cachedWorldConfig) return cachedWorldConfig;
 
   const candidates = [
+    worldConfigSnapshotDir ? path.join(worldConfigSnapshotDir, "world.json") : null,
+    worldConfigSnapshotDir ? path.join(worldConfigSnapshotDir, "config", "world.json") : null,
     worldDir ? path.join(worldDir, "world.json") : null,
     worldDir ? path.join(worldDir, "config", "world.json") : null,
     path.join(CONFIGS_DIR, "world.json"),
@@ -45,6 +49,8 @@ export function loadCharacterProfiles(): CharacterProfile[] {
   if (cachedCharacterProfiles) return cachedCharacterProfiles;
 
   const candidates = [
+    worldConfigSnapshotDir ? path.join(worldConfigSnapshotDir, "config", "characters") : null,
+    worldConfigSnapshotDir ? path.join(worldConfigSnapshotDir, "characters") : null,
     worldDir ? path.join(worldDir, "config", "characters") : null,
     worldDir ? path.join(worldDir, "characters") : null,
     path.join(CONFIGS_DIR, "characters"),
@@ -74,6 +80,8 @@ export function loadSceneConfig(): SceneConfig {
   let sceneFromFile: Record<string, unknown> | null = null;
 
   const candidates = [
+    worldConfigSnapshotDir ? path.join(worldConfigSnapshotDir, "scene.json") : null,
+    worldConfigSnapshotDir ? path.join(worldConfigSnapshotDir, "config", "scene.json") : null,
     worldDir ? path.join(worldDir, "scene.json") : null,
     worldDir ? path.join(worldDir, "config", "scene.json") : null,
     path.join(CONFIGS_DIR, "scene.json"),
@@ -134,6 +142,15 @@ function normalizeCharacterProfile(raw: any): CharacterProfile | null {
     name: raw.name,
     role: raw.role || "NPC",
     nickname: raw.nickname || raw.name,
+    ageYears: normalizeOptionalAge(raw.ageYears ?? raw.age),
+    genderLabel: firstString(raw.genderLabel, raw.gender),
+    socialClass: firstString(raw.socialClass, raw.classStatus, raw.status),
+    occupation: firstString(raw.occupation, raw.job, raw.role),
+    homeLocation: firstString(raw.homeLocation, raw.home),
+    workLocation: firstString(raw.workLocation, raw.workplace, raw.work),
+    family: toStringArray(raw.family),
+    personalityTraits: toStringArray(raw.personalityTraits ?? raw.traits),
+    longTermGoals: toStringArray(raw.longTermGoals ?? raw.goals),
     startPosition: startLocation,
     backstory: typeof raw.backstory === "string" ? raw.backstory : undefined,
     appearanceHint:
@@ -206,10 +223,31 @@ function normalizeCanonicalRefs(raw: unknown): CanonicalRefs | undefined {
 }
 
 function toStringArray(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value.split(/[,、，;；\n]+/).map((v) => v.trim()).filter((v) => v.length > 0);
+  }
   if (!Array.isArray(value)) return [];
   return value
     .map((v) => (typeof v === "string" ? v.trim() : ""))
     .filter((v) => v.length > 0);
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function normalizeOptionalAge(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(120, Math.round(value)));
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(/[^\d.]/g, ""));
+    if (Number.isFinite(parsed)) return Math.max(0, Math.min(120, Math.round(parsed)));
+  }
+  return undefined;
 }
 
 function normalizeStartLocation(startPosition: unknown): string {

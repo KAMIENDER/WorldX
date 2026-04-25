@@ -2,13 +2,32 @@
   "id": "char_1776587577456",
   "name": "李半仙",
   "role": "算命摊主",
+  "ageYears": 54,
+  "genderLabel": "男",
+  "socialClass": "流动摊贩",
+  "occupation": "算命先生",
+  "homeLocation": "main_area",
+  "workLocation": "fortune_telling_stall",
+  "family": [
+    "早年离乡后和亲族少有往来",
+    "收了一个跑腿小徒弟但今晚没带在身边"
+  ],
+  "personalityTraits": [
+    "会察言观色",
+    "胆小避事",
+    "说话爱留余地",
+    "贪小利",
+    "对异常细节很敏感"
+  ],
+  "longTermGoals": [
+    "攒钱租下一个不用每日搬动的固定摊位",
+    "靠算命名声多招揽客人",
+    "避免被当铺失窃案牵连"
+  ],
   "personality": "性子慢，说话喜欢故弄玄虚，观察力强，胆子小怕惹事。",
   "appearanceHint": "留着山羊胡，穿着道袍，看着像懂些玄学的人。",
   "motivation": "多招揽客人算命赚银两，不掺和是非。",
   "socialStyle": "extrovert，擅长察言观色，会主动搭话过往路人招揽生意。",
-  "traits": [
-    "complex"
-  ],
   "startPosition": {
     "tileX": 236,
     "tileY": 94,

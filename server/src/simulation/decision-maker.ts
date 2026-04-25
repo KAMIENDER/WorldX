@@ -53,6 +53,10 @@ export class DecisionMaker {
         : "";
 
     const currentFocus = this.worldManager.getGlobal(`current_focus:${charId}`) ?? undefined;
+    const relationshipContext = this.characterManager.getRelationshipSummary(
+      charId,
+      perception.charactersHere.map((c) => c.id),
+    );
 
     const messages = this.promptBuilder.buildReactiveDecisionMessages({
       profile,
@@ -62,6 +66,7 @@ export class DecisionMaker {
       relevantMemories,
       actionMenu,
       currentFocus,
+      relationshipContext,
       worldSocialContext: this.worldManager.getWorldSocialContext(),
     });
 

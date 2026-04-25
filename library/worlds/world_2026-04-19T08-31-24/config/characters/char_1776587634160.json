@@ -2,13 +2,32 @@
   "id": "char_1776587634160",
   "name": "张老醉",
   "role": "夜市常客酒鬼",
+  "ageYears": 67,
+  "genderLabel": "男",
+  "socialClass": "落魄老民",
+  "occupation": "无固定营生的夜市常客",
+  "homeLocation": "main_area",
+  "workLocation": "main_area",
+  "family": [
+    "年轻时有过妻儿，后来家散了，平日不愿细说",
+    "偶尔会把讨来的钱托熟摊主带给城南一个孩子"
+  ],
+  "personalityTraits": [
+    "话多",
+    "记忆混乱",
+    "爱装糊涂",
+    "心软",
+    "酒后容易说漏嘴"
+  ],
+  "longTermGoals": [
+    "每天弄到一口酒喝",
+    "逃避年轻时欠下的人情债",
+    "在夜市里找个还能听他说话的人"
+  ],
   "personality": "整日醉醺醺的，说话颠三倒四，记性差，爱拉着人闲聊。",
   "appearanceHint": "走路摇摇晃晃，身上带着浓重酒气，看着像是喝多了的人。",
   "motivation": "喝到更多的酒，每天都能醉醺醺的不用操心烦心事。",
   "socialStyle": "extrovert，喝醉了就爱拉着路过的人说话，不管对方愿不愿意听。",
-  "traits": [
-    "complex"
-  ],
   "startPosition": {
     "tileX": 310,
     "tileY": 122,

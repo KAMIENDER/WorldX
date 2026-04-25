@@ -158,6 +158,15 @@ export function generateConfigs(worldDesign, worldDir, options = {}) {
       id: charId,
       name: charDesign.name,
       role: charDesign.role,
+      ageYears: normalizeAgeYears(charDesign.ageYears ?? charDesign.age),
+      genderLabel: stringOrEmpty(charDesign.genderLabel ?? charDesign.gender),
+      socialClass: stringOrEmpty(charDesign.socialClass ?? charDesign.classStatus),
+      occupation: stringOrEmpty(charDesign.occupation ?? charDesign.role),
+      homeLocation: stringOrEmpty(charDesign.homeLocation ?? charDesign.home),
+      workLocation: stringOrEmpty(charDesign.workLocation ?? charDesign.workplace),
+      family: stringArray(charDesign.family),
+      personalityTraits: stringArray(charDesign.personalityTraits ?? charDesign.traits),
+      longTermGoals: stringArray(charDesign.longTermGoals ?? charDesign.goals),
       personality: charDesign.personality,
       appearanceHint:
         typeof charDesign.appearanceHint === "string" ? charDesign.appearanceHint : "",
@@ -184,6 +193,26 @@ export function generateConfigs(worldDesign, worldDir, options = {}) {
   console.log(`  scene.json: ${sceneConfig.sceneType} scene`);
 
   return { worldConfig, characterConfigs, sceneConfig };
+}
+
+function stringOrEmpty(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function stringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+}
+
+function normalizeAgeYears(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(120, Math.round(value)));
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^\d.]/g, ""));
+    if (Number.isFinite(parsed)) return Math.max(0, Math.min(120, Math.round(parsed)));
+  }
+  return undefined;
 }
 
 function buildLocations(tmjRegions, tmjObjects, worldDesign, tmj) {

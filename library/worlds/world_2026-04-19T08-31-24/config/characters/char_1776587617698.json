@@ -2,13 +2,32 @@
   "id": "char_1776587617698",
   "name": "陈阿狗",
   "role": "偷窃当铺的小偷",
+  "ageYears": 27,
+  "genderLabel": "男",
+  "socialClass": "底层游民",
+  "occupation": "无固定营生的小偷",
+  "homeLocation": "main_area",
+  "workLocation": "main_area",
+  "family": [
+    "母亲早亡，父亲欠债后不知去向",
+    "城外还有个同母妹妹，偶尔靠他接济"
+  ],
+  "personalityTraits": [
+    "谨慎",
+    "不信任别人",
+    "反应快",
+    "容易被逼急",
+    "对穷人有一点同情"
+  ],
+  "longTermGoals": [
+    "尽快把偷来的典当品脱手",
+    "攒一笔钱离开这片夜市",
+    "不要被苏捕头抓住"
+  ],
   "personality": "谨慎小心，话少寡言，手脚麻利，靠小偷小摸维持生计，很少漏破绽。",
   "appearanceHint": "穿着普通粗布衣服，沉默寡言，很少主动和人搭话。",
   "motivation": "把偷来的典当品尽快出手，不要被人发现自己的偷窃行为。",
   "socialStyle": "introvert，尽量避开人群和官差，不主动和陌生人交流。",
-  "traits": [
-    "complex"
-  ],
   "startPosition": {
     "tileX": 331,
     "tileY": 111,

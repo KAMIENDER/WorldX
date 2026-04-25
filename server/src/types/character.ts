@@ -14,6 +14,14 @@ export interface CharacterProfile {
   role: string;
   nickname: string;
   ageYears?: number;
+  genderLabel?: string;
+  socialClass?: string;
+  occupation?: string;
+  homeLocation?: string;
+  workLocation?: string;
+  family: string[];
+  personalityTraits: string[];
+  longTermGoals: string[];
   startPosition: string;
   backstory?: string;
   appearanceHint?: string;
@@ -87,6 +95,11 @@ export interface CharacterState {
   emotionArousal: number;
 
   curiosity: number;
+  energy: number;
+  hunger: number;
+  stress: number;
+  money: number;
+  shortTermGoal: string | null;
 
   ageYears: number;
   ageDays: number;
@@ -99,6 +112,19 @@ export interface CharacterState {
   deathCause: string | null;
 
   dailyPlan: string | null;
+}
+
+/** 显式关系状态（source 视角下如何看待 target，存 DB，易变层） */
+export interface CharacterRelationship {
+  sourceCharacterId: string;
+  targetCharacterId: string;
+  familiarity: number;
+  affinity: number;
+  trust: number;
+  fear: number;
+  conflict: number;
+  debt: number;
+  notes: string;
 }
 
 /** 记忆条目 */

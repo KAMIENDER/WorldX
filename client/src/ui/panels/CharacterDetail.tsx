@@ -99,6 +99,9 @@ export function CharacterDetail({
 
   const { profile, state, emotionLabel } = detail;
   const isFollowing = followedCharId === charId;
+  const visibleRelationships = (detail.relationships ?? [])
+    .filter((rel) => characters.some((character) => character.id === rel.targetCharacterId))
+    .slice(0, 4);
 
   const openEditor = () => {
     setEditDraft({
@@ -106,6 +109,13 @@ export function CharacterDetail({
       coreValues: ((profile.coreValues as string[]) ?? []).join("、"),
       speakingStyle: profile.speakingStyle ?? "",
       fears: ((profile.fears as string[]) ?? []).join("、"),
+      socialClass: profile.socialClass ?? "",
+      occupation: profile.occupation ?? "",
+      homeLocation: profile.homeLocation ?? "",
+      workLocation: profile.workLocation ?? "",
+      family: ((profile.family as string[]) ?? []).join("、"),
+      personalityTraits: ((profile.personalityTraits as string[]) ?? []).join("、"),
+      longTermGoals: ((profile.longTermGoals as string[]) ?? []).join("、"),
       backstory: (profile.backstory as string) ?? "",
     });
     setEditing(true);
@@ -121,6 +131,13 @@ export function CharacterDetail({
         coreValues: split(editDraft.coreValues ?? ""),
         speakingStyle: editDraft.speakingStyle?.trim() || undefined,
         fears: split(editDraft.fears ?? ""),
+        socialClass: editDraft.socialClass?.trim() || undefined,
+        occupation: editDraft.occupation?.trim() || undefined,
+        homeLocation: editDraft.homeLocation?.trim() || undefined,
+        workLocation: editDraft.workLocation?.trim() || undefined,
+        family: split(editDraft.family ?? ""),
+        personalityTraits: split(editDraft.personalityTraits ?? ""),
+        longTermGoals: split(editDraft.longTermGoals ?? ""),
         backstory: editDraft.backstory?.trim() || undefined,
       });
       setEditFlash(t("charDetail.saved"));
@@ -176,6 +193,52 @@ export function CharacterDetail({
 	          {t("charDetail.age")}: {state.ageYears}{t("charDetail.ageSuffix")} · {t("charDetail.lifeStage")}: {state.lifeStageLabel || formatLifeStage(state.lifeStage)} · {t("charDetail.body")}: {state.bodyConditionLabel || formatBodyCondition(state.bodyCondition)} · {t("charDetail.health")}: {Math.round(state.health)}/100
 	        </div>
 	      </div>
+
+      <div style={lifeGridStyle}>
+        <NeedMeter label={t("charDetail.energy")} value={state.energy} tone="#65f29b" />
+        <NeedMeter label={t("charDetail.hunger")} value={state.hunger} tone="#ffd84d" invert />
+        <NeedMeter label={t("charDetail.stress")} value={state.stress} tone="#ff7b7b" invert />
+      </div>
+
+      {(state.money !== undefined || state.shortTermGoal || profile.socialClass || profile.occupation || profile.family?.length || profile.longTermGoals?.length) && (
+        <div style={profileFactStyle}>
+          {(profile.socialClass || profile.occupation) && (
+            <div>
+              {profile.socialClass || t("charDetail.unknownClass")}
+              {profile.occupation ? ` · ${profile.occupation}` : ""}
+            </div>
+          )}
+          {(profile.homeLocation || profile.workLocation) && (
+            <div>
+              {profile.homeLocation ? `${t("charDetail.home")}: ${locationNames[profile.homeLocation] || profile.homeLocation}` : ""}
+              {profile.homeLocation && profile.workLocation ? " · " : ""}
+              {profile.workLocation ? `${t("charDetail.work")}: ${locationNames[profile.workLocation] || profile.workLocation}` : ""}
+            </div>
+          )}
+          {state.shortTermGoal && <div>{t("charDetail.shortTermGoal")}: {state.shortTermGoal}</div>}
+          <div>{t("charDetail.money")}: {Math.round(state.money)}</div>
+          {profile.family?.length ? <div>{t("charDetail.family")}: {profile.family.join("；")}</div> : null}
+          {profile.personalityTraits?.length ? <div>{t("charDetail.traits")}: {profile.personalityTraits.join("、")}</div> : null}
+          {profile.longTermGoals?.length ? <div>{t("charDetail.longTermGoals")}: {profile.longTermGoals.join("；")}</div> : null}
+        </div>
+      )}
+
+      {visibleRelationships.length > 0 && (
+        <div style={relationshipWrapStyle}>
+          <div style={relationshipTitleStyle}>{t("charDetail.relationships")}</div>
+          {visibleRelationships.map((rel) => (
+            <div key={rel.targetCharacterId} style={relationshipRowStyle}>
+              <span style={{ color: "#fff", fontWeight: 700 }}>
+                {characterNames[rel.targetCharacterId] || rel.targetCharacterId}
+              </span>
+              <span>{t("charDetail.familiarity")}{Math.round(rel.familiarity)}</span>
+              <span>{t("charDetail.affinity")}{Math.round(rel.affinity)}</span>
+              <span>{t("charDetail.trust")}{Math.round(rel.trust)}</span>
+              {rel.conflict > 0 && <span>{t("charDetail.conflict")}{Math.round(rel.conflict)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {editFlash && !editing && (
         <div style={{ fontSize: 11, color: "#8df3cf", marginBottom: 6, flexShrink: 0 }}>{editFlash}</div>
@@ -296,6 +359,39 @@ export function CharacterDetail({
           (tab === "memory" && memories.length === 0)) && (
           <div style={{ color: "#666", padding: 8, textAlign: "center" }}>{t("charDetail.noData")}</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function NeedMeter({
+  label,
+  value,
+  tone,
+  invert = false,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+  invert?: boolean;
+}) {
+  const rounded = Math.round(value);
+  const alert = invert ? rounded >= 70 : rounded <= 30;
+  return (
+    <div style={needMeterStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+        <span>{label}</span>
+        <span style={{ color: alert ? "#ffb0b0" : "#ddd", fontWeight: 700 }}>{rounded}</span>
+      </div>
+      <div style={needTrackStyle}>
+        <div
+          style={{
+            width: `${Math.max(0, Math.min(100, rounded))}%`,
+            height: "100%",
+            background: tone,
+            boxShadow: `0 0 10px ${tone}`,
+          }}
+        />
       </div>
     </div>
   );
@@ -433,6 +529,13 @@ const PROFILE_FIELD_KEYS: { key: string; labelKey: string; multiline?: boolean }
   { key: "coreValues", labelKey: "charDetail.fieldCoreValues" },
   { key: "speakingStyle", labelKey: "charDetail.fieldSpeakingStyle" },
   { key: "fears", labelKey: "charDetail.fieldFears" },
+  { key: "socialClass", labelKey: "charDetail.fieldSocialClass" },
+  { key: "occupation", labelKey: "charDetail.fieldOccupation" },
+  { key: "homeLocation", labelKey: "charDetail.fieldHomeLocation" },
+  { key: "workLocation", labelKey: "charDetail.fieldWorkLocation" },
+  { key: "family", labelKey: "charDetail.fieldFamily" },
+  { key: "personalityTraits", labelKey: "charDetail.fieldPersonalityTraits" },
+  { key: "longTermGoals", labelKey: "charDetail.fieldLongTermGoals" },
   { key: "backstory", labelKey: "charDetail.fieldBackstory", multiline: true },
 ];
 
@@ -498,6 +601,73 @@ const editBtnStyle: CSSProperties = {
   cursor: "pointer",
   fontSize: 11,
   marginLeft: "auto",
+};
+
+const lifeGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr 1fr",
+  gap: 6,
+  marginBottom: 8,
+  flexShrink: 0,
+};
+
+const needMeterStyle: CSSProperties = {
+  display: "grid",
+  gap: 4,
+  padding: "6px 7px",
+  background: "rgba(255,255,255,0.045)",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 4,
+  color: "rgba(255,255,255,0.72)",
+  fontSize: 10,
+};
+
+const needTrackStyle: CSSProperties = {
+  height: 4,
+  overflow: "hidden",
+  background: "rgba(255,255,255,0.09)",
+  borderRadius: 2,
+};
+
+const profileFactStyle: CSSProperties = {
+  display: "grid",
+  gap: 3,
+  marginBottom: 8,
+  padding: "7px 8px",
+  background: "rgba(255,255,255,0.045)",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderLeft: "3px solid var(--hud-gold)",
+  borderRadius: 4,
+  color: "rgba(255,255,255,0.66)",
+  fontSize: 11,
+  lineHeight: 1.5,
+  flexShrink: 0,
+};
+
+const relationshipWrapStyle: CSSProperties = {
+  display: "grid",
+  gap: 4,
+  marginBottom: 8,
+  flexShrink: 0,
+};
+
+const relationshipTitleStyle: CSSProperties = {
+  color: "var(--hud-gold)",
+  fontSize: 10,
+  fontWeight: 900,
+};
+
+const relationshipRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 7,
+  flexWrap: "wrap",
+  padding: "5px 7px",
+  background: "rgba(255,255,255,0.045)",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 4,
+  color: "rgba(255,255,255,0.62)",
+  fontSize: 10,
 };
 
 const editorWrapStyle: CSSProperties = {

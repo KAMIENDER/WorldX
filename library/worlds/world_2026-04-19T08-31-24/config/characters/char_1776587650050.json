@@ -2,13 +2,32 @@
   "id": "char_1776587650050",
   "name": "林小夏",
   "role": "现代穿越来的网红",
+  "ageYears": 24,
+  "genderLabel": "女",
+  "socialClass": "外来异乡人",
+  "occupation": "短视频博主",
+  "homeLocation": "main_area",
+  "workLocation": "main_area",
+  "family": [
+    "现代世界里父母还在等她回家",
+    "经纪人原本催她今晚交宋朝文化选题的视频"
+  ],
+  "personalityTraits": [
+    "好奇",
+    "外向",
+    "适应快",
+    "遇到危险会先嘴硬",
+    "习惯用现代经验解释古代事物"
+  ],
+  "longTermGoals": [
+    "弄清自己为什么会来到宋朝夜市",
+    "找到回到现代的方法",
+    "把眼前经历记录成独一无二的内容"
+  ],
   "personality": "好奇心强，活泼外向，喜欢新鲜事物，适应能力强，遇到新奇事物就想拍下来。",
   "appearanceHint": "留着长头发，穿着样式奇特的衣服，手里拿着个从没见过的黑色小方块，看着很新奇。",
   "motivation": "探索宋朝夜市的风土人情，拍视频记录下来，想办法回到现代。",
   "socialStyle": "extrovert，对什么都好奇，喜欢和人搭话问东问西。",
-  "traits": [
-    "complex"
-  ],
   "startPosition": {
     "tileX": 183,
     "tileY": 137,

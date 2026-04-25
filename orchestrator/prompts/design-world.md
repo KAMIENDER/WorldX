@@ -50,7 +50,15 @@
   - `visualDescription`（≤15 字，描述该元素**从正上方俯视**时的外观特征）
   - `placementHint`（2–4 个词的位置描述）
   - `interactions`（对象数组，包含 `id`、`name`、`description`、`durationMinutes`、`effects`，以及可选的 `requiresAnchor`）
-- `characters`（数组）：1–8 项。每项包含：`name`、`role`、`personality`、`appearance`（语言与用户输入一致，描述视觉外观：身份/职业关键词 + 发型、服装、配饰、颜色。**必须包含用户原文中的身份关键词**，如用户说"捕快"则 appearance 中必须出现"捕快"）、`appearanceHint`（一句话，供**其他角色看到 ta 时**使用的外貌弱提示；只写旁观者一眼能注意到的外观印象，不要直接泄露身份真相、现代概念、剧情设定或标签判断。例如不要写"现代网红"，应写"衣着样式和镇上人格格不入，打扮很新奇"）、`motivation`、`socialStyle`、`initialMemories`（字符串数组）。可选填 `anchor`（见下方"角色锚定"规则）。当且仅当用户明确提到了知名 IP 角色时，才可选填 `iconicCues` 和 `canonicalRefs`（详见下方"角色鲜活度"规则）。
+- `characters`（数组）：1–8 项。每项包含：`name`、`role`、`ageYears`、`genderLabel`、`socialClass`、`occupation`、`homeLocation`、`workLocation`、`family`、`personalityTraits`、`longTermGoals`、`personality`、`appearance`（语言与用户输入一致，描述视觉外观：身份/职业关键词 + 发型、服装、配饰、颜色。**必须包含用户原文中的身份关键词**，如用户说"捕快"则 appearance 中必须出现"捕快"）、`appearanceHint`（一句话，供**其他角色看到 ta 时**使用的外貌弱提示；只写旁观者一眼能注意到的外观印象，不要直接泄露身份真相、现代概念、剧情设定或标签判断。例如不要写"现代网红"，应写"衣着样式和镇上人格格不入，打扮很新奇"）、`motivation`、`socialStyle`、`initialMemories`（字符串数组）。可选填 `anchor`（见下方"角色锚定"规则）。当且仅当用户明确提到了知名 IP 角色时，才可选填 `iconicCues` 和 `canonicalRefs`（详见下方"角色鲜活度"规则）。
+  - `ageYears` 必须与身份合理匹配；不要所有角色都 20–30 岁。
+  - `genderLabel` 是世界内自然称谓/性别表达，如"男"、"女"、"老人"、"少女"、"未知"；不要强行现代标签。
+  - `socialClass` 写社会位置，如"小商贩"、"官差"、"流民"、"外来游客"、"富户家仆"。
+  - `occupation` 写真实日常职业或职责，不只是剧情标签。
+  - `homeLocation`、`workLocation` 优先填写已有 `regions` 或 `interactiveElements` 的 id；不确定时填 `"main_area"`。
+  - `family` 是字符串数组，写重要亲属/牵挂/同住者关系；没有可为空数组。
+  - `personalityTraits` 是 3–6 个稳定人格特质，避免泛泛的"善良勇敢"。
+  - `longTermGoals` 是 1–3 个长期目标，应能驱动日常行动。
   - `anchor`（可选对象）：`{ "type": "region" | "element", "targetId": "对应的 region 或 interactiveElement 的 id" }`。省略则为自由行走角色
   - `iconicCues`（可选对象）：`speechQuirks`（字符串数组——结构性说话习惯，不是口头禅；如"总以试探性反问回应别人，以此让对方先亮出底牌"）、`catchphrases`（数组，最多 2 条标志性台词）、`behavioralTics`（字符串数组——可反复出现的小动作/行为习惯）
   - `canonicalRefs`（可选对象）：`source`（原作 IP 名称）、`keyRelationships`（字符串数组——原作中对该角色最重要的人及关系）、`signatureMoments`（1–2 条字符串——定义该角色的关键时刻，作为其"心结"或执念，用作触发器而非表演素材）
@@ -151,6 +159,15 @@
     {
       "name": "名字",
       "role": "角色定位",
+      "ageYears": 34,
+      "genderLabel": "男",
+      "socialClass": "小商贩",
+      "occupation": "茶摊摊主",
+      "homeLocation": "main_area",
+      "workLocation": "example_stall",
+      "family": ["家中有年迈母亲，需要每日照料"],
+      "personalityTraits": ["谨慎", "会察言观色", "怕惹官司"],
+      "longTermGoals": ["攒够钱把茶摊换成固定铺面"],
       "personality": "性格特征、说话方式、价值观、恐惧。",
       "appearance": "北宋捕快，黑色官帽，深褐色公服，腰挂佩刀，黑布靴。",
       "appearanceHint": "官帽和公服都很显眼，像个办差的人。",

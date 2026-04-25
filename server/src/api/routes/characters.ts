@@ -35,8 +35,15 @@ router.get("/", (_req, res) => {
 	      health: s.health,
 	      bodyCondition: s.bodyCondition,
 	      bodyConditionLabel: getBodyConditionLabel(s.bodyCondition),
+	      energy: s.energy,
+	      hunger: s.hunger,
+	      stress: s.stress,
+	      money: s.money,
+	      shortTermGoal: s.shortTermGoal,
 	      isAlive: s.isAlive,
 	      anchor: p.anchor || null,
+	      socialClass: p.socialClass,
+	      occupation: p.occupation,
 	    };
 	  });
   res.json(result);
@@ -63,6 +70,7 @@ router.get("/:id", (req, res) => {
 	        bodyConditionLabel: getBodyConditionLabel(state.bodyCondition),
 	      },
       emotionLabel: getEmotionLabel(state.emotionValence, state.emotionArousal),
+      relationships: appContext.characterManager.getRelationships(req.params.id),
     });
   } catch {
     res.status(404).json({ error: "Character not found" });

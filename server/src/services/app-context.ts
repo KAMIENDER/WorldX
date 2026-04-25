@@ -10,7 +10,7 @@ import { initDatabase, closeDb } from "../store/db.js";
 import { reloadConfigs } from "../utils/config-loader.js";
 import { TimelineManager } from "./timeline-manager.js";
 import type { SceneConfig } from "../types/index.js";
-import type { InitFrameCharacter } from "./timeline-manager.js";
+import type { InitFrameCharacter, TimelineMeta } from "./timeline-manager.js";
 
 export class AppContext {
   worldManager!: WorldManager;
@@ -25,6 +25,7 @@ export class AppContext {
   eventBus = new EventEmitter();
 
   private worldDirPath?: string;
+  private configSnapshotDirPath: string | null = null;
   private sceneConfigOverride: Partial<SceneConfig> | null = null;
   private _initialized = false;
   private tickEventsHandlerRegistered = false;
@@ -34,6 +35,7 @@ export class AppContext {
 
     if (worldDirPath) {
       const timelineId = this.timelineManager.initialize(worldDirPath);
+      this.configSnapshotDirPath = this.resolveTimelineSnapshotDir(timelineId);
       const dbPath = this.timelineManager.getTimelineDbPath(worldDirPath, timelineId);
       initDatabase(dbPath);
       this.rebuildRuntime();
@@ -63,6 +65,7 @@ export class AppContext {
     reloadConfigs();
 
     const timelineId = this.timelineManager.initialize(worldDirPath);
+    this.configSnapshotDirPath = this.resolveTimelineSnapshotDir(timelineId);
     const dbPath = this.timelineManager.getTimelineDbPath(worldDirPath, timelineId);
     initDatabase(dbPath);
 
@@ -78,7 +81,24 @@ export class AppContext {
     closeDb();
 
     this.timelineManager.initialize(this.worldDirPath, timelineId);
+    this.configSnapshotDirPath = this.resolveTimelineSnapshotDir(timelineId);
     const dbPath = this.timelineManager.getTimelineDbPath(this.worldDirPath, timelineId);
+    initDatabase(dbPath);
+
+    reloadConfigs();
+    this.rebuildRuntime();
+    this.beginRecording();
+    this.eventBus.emit("simulation_status", { status: "idle" });
+  }
+
+  switchWorldTimeline(worldDirPath: string, timelineId: string): void {
+    this.timelineManager.stopRecording();
+    closeDb();
+
+    this.worldDirPath = worldDirPath;
+    this.timelineManager.initialize(worldDirPath, timelineId);
+    this.configSnapshotDirPath = this.resolveTimelineSnapshotDir(timelineId);
+    const dbPath = this.timelineManager.getTimelineDbPath(worldDirPath, timelineId);
     initDatabase(dbPath);
 
     reloadConfigs();
@@ -94,6 +114,7 @@ export class AppContext {
     closeDb();
 
     const newId = this.timelineManager.createTimeline(this.worldDirPath);
+    this.configSnapshotDirPath = this.resolveTimelineSnapshotDir(newId);
     const dbPath = this.timelineManager.getTimelineDbPath(this.worldDirPath, newId);
     initDatabase(dbPath);
 
@@ -101,6 +122,19 @@ export class AppContext {
     this.rebuildRuntime();
     this.beginRecording();
     this.eventBus.emit("simulation_status", { status: "idle" });
+  }
+
+  async createManualSave(input: { name?: unknown; note?: unknown } = {}): Promise<TimelineMeta> {
+    if (!this.worldDirPath) {
+      throw new Error("No world loaded");
+    }
+
+    this.timelineManager.stopRecording();
+    try {
+      return await this.timelineManager.createManualSaveFromCurrent(this.worldDirPath, input);
+    } finally {
+      this.beginRecording();
+    }
   }
 
   resetWorldState(): void {
@@ -118,6 +152,11 @@ export class AppContext {
   private beginRecording(): void {
     const characters = this.getInitFrameCharacters();
     this.timelineManager.startRecording(characters);
+  }
+
+  private resolveTimelineSnapshotDir(timelineId: string): string | null {
+    if (!this.worldDirPath) return null;
+    return this.timelineManager.getTimelineConfigSnapshotDir(this.worldDirPath, timelineId);
   }
 
   private getInitFrameCharacters(): InitFrameCharacter[] {
@@ -154,7 +193,7 @@ export class AppContext {
 
   private rebuildRuntime(): void {
     this.worldManager = new WorldManager();
-    this.worldManager.initialize(this.worldDirPath);
+    this.worldManager.initialize(this.worldDirPath, this.configSnapshotDirPath);
     if (this.sceneConfigOverride) {
       this.worldManager.applySceneConfigOverride(this.sceneConfigOverride);
     }

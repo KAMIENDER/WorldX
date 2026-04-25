@@ -437,8 +437,8 @@ export function TopBar({
 
           <button onClick={() => setManagerModalOpen(true)} disabled={isBusy}
             style={chipBtnStyle(managerModalOpen)}
-            title={t("topbar.manageTitle")}>
-            {t("topbar.manage")}
+            title={t("topbar.saveLoadTitle")}>
+            {t("topbar.saveLoad")}
           </button>
 
           {inRunMode && (
@@ -666,6 +666,10 @@ function formatTimelineLabel(tl: TimelineMeta, index: number): string {
     }
   }
   const tickLabel = `${tl.tickCount}t`;
+  const saveName = tl.name?.trim();
+  if (saveName) {
+    return timeStr ? `${saveName} · ${timeStr} (${tickLabel})` : `${saveName} (${tickLabel})`;
+  }
   return timeStr ? `#${index} · ${timeStr} (${tickLabel})` : `#${index} (${tickLabel})`;
 }
 

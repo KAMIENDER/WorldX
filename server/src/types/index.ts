@@ -21,6 +21,7 @@ export type {
   CharacterProfile,
   CharacterAnchor,
   CharacterState,
+  CharacterRelationship,
   MemoryEntry,
   DailyPlan,
   PlanItem,

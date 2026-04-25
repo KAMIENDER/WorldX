@@ -38,6 +38,11 @@ export interface CharacterInfo {
   health: number;
   bodyCondition: string;
   bodyConditionLabel?: string;
+  energy: number;
+  hunger: number;
+  stress: number;
+  money: number;
+  shortTermGoal?: string | null;
   isAlive: boolean;
   location: string;
   mainAreaPointId?: string | null;
@@ -45,6 +50,8 @@ export interface CharacterInfo {
   currentAction: string | null;
   currentActionLabel?: string | null;
   anchor?: { type: "region" | "element"; targetId: string } | null;
+  socialClass?: string;
+  occupation?: string;
 }
 
 export interface CharacterProfile {
@@ -52,6 +59,14 @@ export interface CharacterProfile {
   name: string;
   role: string;
   nickname: string;
+  genderLabel?: string;
+  socialClass?: string;
+  occupation?: string;
+  homeLocation?: string;
+  workLocation?: string;
+  family?: string[];
+  personalityTraits?: string[];
+  longTermGoals?: string[];
   backstory?: string;
   appearanceHint?: string;
   coreMotivation: string;
@@ -80,12 +95,30 @@ export interface CharacterDetail {
 	    health: number;
 	    bodyCondition: string;
 	    bodyConditionLabel?: string;
+	    energy: number;
+	    hunger: number;
+	    stress: number;
+	    money: number;
+	    shortTermGoal?: string | null;
 	    isAlive: boolean;
 	    deathDay: number | null;
 	    deathTick: number | null;
 	    deathCause: string | null;
 	  };
   emotionLabel: string;
+  relationships?: CharacterRelationship[];
+}
+
+export interface CharacterRelationship {
+  sourceCharacterId: string;
+  targetCharacterId: string;
+  familiarity: number;
+  affinity: number;
+  trust: number;
+  fear: number;
+  conflict: number;
+  debt: number;
+  notes: string;
 }
 
 export interface DiaryEntry {
@@ -207,6 +240,13 @@ export interface MainAreaPointInfo {
 export interface TimelineMeta {
   id: string;
   worldId: string;
+  name?: string;
+  note?: string;
+  summary?: string;
+  saveKind?: "run" | "manual";
+  sourceTimelineId?: string;
+  worldSnapshotDir?: string;
+  snapshotVersion?: number;
   createdAt: string;
   updatedAt: string;
   lastGameTime: GameTime;
