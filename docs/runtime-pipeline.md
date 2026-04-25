@@ -253,6 +253,14 @@ durationTicks = Math.max(1, Math.ceil(durationMinutes / tickDurationMinutes))
 
 对话结束后，`dialogue_finalize` 会分别写入双方自己的记忆摘要。
 
+相关记忆检索是 hybrid retrieval：
+
+- 候选集只来自当前角色自己的 `memories`。
+- 文本相关性使用 BM25，输入包括记忆内容、tags、相关角色、地点和物件。
+- 如果 `.env` 配置了 `EMBEDDING_MODEL`，会调用 OpenAI-compatible `/embeddings` 生成 query 和 memory embedding，并用 cosine similarity 参与相关性。
+- 最终 relevance 由 `BM25 + embedding cosine + relatedCharacters/relatedLocation bonus` 组成；embedding 不可用时自动退回 BM25。
+- 排序总分还会叠加 recency、importance、emotionalIntensity。
+
 此外还有：
 
 - `memory_formed`：观察到他人明显情绪时可能生成。

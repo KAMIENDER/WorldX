@@ -27,7 +27,7 @@ export class DialogueGenerator {
     gameTime: GameTime;
   }): Promise<DialogueTurnGeneration> {
     const { session, gameTime } = params;
-    const context = this.buildDialogueContext(session, gameTime);
+    const context = await this.buildDialogueContext(session, gameTime);
 
     try {
       const messages = this.promptBuilder.buildDialogueTurnMessages({
@@ -103,7 +103,7 @@ export class DialogueGenerator {
     gameTime: GameTime;
   }): Promise<DialogueResult> {
     const { session, gameTime } = params;
-    const context = this.buildDialogueContext(session, gameTime);
+    const context = await this.buildDialogueContext(session, gameTime);
 
     try {
       const messages = this.promptBuilder.buildDialogueFinalizeMessages({
@@ -152,7 +152,7 @@ export class DialogueGenerator {
     }
   }
 
-  private buildDialogueContext(
+  private async buildDialogueContext(
     session: DialogueSession,
     gameTime: GameTime,
   ) {
@@ -162,20 +162,22 @@ export class DialogueGenerator {
     const stateA = this.characterManager.getState(initiatorId);
     const stateB = this.characterManager.getState(responderId);
 
-    const memoriesA = this.characterManager.memoryManager.retrieveMemories({
-      characterId: initiatorId,
-      currentTime: gameTime,
-      contextKeywords: [profileB.name, profileB.id],
-      relatedCharacterIds: [responderId],
-      topK: 5,
-    });
-    const memoriesB = this.characterManager.memoryManager.retrieveMemories({
-      characterId: responderId,
-      currentTime: gameTime,
-      contextKeywords: [profileA.name, profileA.id],
-      relatedCharacterIds: [initiatorId],
-      topK: 5,
-    });
+    const [memoriesA, memoriesB] = await Promise.all([
+      this.characterManager.memoryManager.retrieveMemoriesAsync({
+        characterId: initiatorId,
+        currentTime: gameTime,
+        contextKeywords: [profileB.name, profileB.id],
+        relatedCharacterIds: [responderId],
+        topK: 5,
+      }),
+      this.characterManager.memoryManager.retrieveMemoriesAsync({
+        characterId: responderId,
+        currentTime: gameTime,
+        contextKeywords: [profileA.name, profileA.id],
+        relatedCharacterIds: [initiatorId],
+        topK: 5,
+      }),
+    ]);
 
     const fmtMem = (m: { gameDay: number; gameTick: number; content: string }) =>
       `- [${relativeTimeLabel(m.gameDay, m.gameTick, gameTime)}] ${m.content}`;

@@ -226,12 +226,14 @@ library/worlds/<world_id>/timelines/<timeline_id>/
 - 记忆衰减。
 - 记忆整合。
 - 缓存清理。
+- 使用 BM25 + embedding cosine 做异步相关记忆检索。
 
 重要边界：
 
 - 记忆以 `character_id` 隔离。
 - 决策检索只读取当前角色自己的记忆。
 - 跨角色信息必须通过对话、观察、广播、传闻等机制写入自己的记忆后才会被检索。
+- `.env` 中的 `EMBEDDING_MODEL` 控制 embedding 检索；`EMBEDDING_BASE_URL` 和 `EMBEDDING_API_KEY` 未设置时复用 `SIMULATION_*`。
 
 ## SimulationEngine
 

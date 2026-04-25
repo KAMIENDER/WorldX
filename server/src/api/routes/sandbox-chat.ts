@@ -129,7 +129,7 @@ router.post("/message", async (req: Request, res: Response) => {
     .filter((k) => k.length >= 2)
     .slice(0, 20);
 
-  const memories = appContext.characterManager.memoryManager.retrieveMemories({
+  const memories = await appContext.characterManager.memoryManager.retrieveMemoriesAsync({
     characterId: session.characterId,
     currentTime: gameTime,
     contextKeywords,

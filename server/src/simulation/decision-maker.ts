@@ -34,7 +34,7 @@ export class DecisionMaker {
       if (c.locationName) contextKeywords.push(c.locationName);
     }
 
-    const memories = this.characterManager.memoryManager.retrieveMemories({
+    const memories = await this.characterManager.memoryManager.retrieveMemoriesAsync({
       characterId: charId,
       currentTime: gameTime,
       contextKeywords,
