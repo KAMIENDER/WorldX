@@ -183,18 +183,18 @@ export function TopBar({
           : t("topbar.statusIdle");
   const statusColor =
     inReplayMode
-      ? "#e17055"
+      ? "var(--hud-gold)"
       : isSwitchingWorld || isSwitchingTimeline
-      ? "#9b59b6"
+      ? "var(--hud-blue)"
       : isResetting
-      ? "#e67e22"
+      ? "var(--hud-gold)"
       : simStatus === "running"
-      ? "#f39c12"
+      ? "var(--hud-green)"
       : simStatus === "error"
-        ? "#e74c3c"
+        ? "var(--hud-red)"
         : simStatus === "paused"
-          ? "#95a5a6"
-          : "#00b894";
+          ? "var(--hud-dim)"
+          : "var(--hud-blue)";
 
   const pauseWorldIfNeeded = () => {
     if (!autoPlayEnabled) return;
@@ -288,43 +288,51 @@ export function TopBar({
       ref={barRef}
       style={{
         position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        background: "linear-gradient(180deg, rgba(10,12,24,0.96), rgba(10,12,24,0.92))",
-        backdropFilter: "blur(10px)",
+        top: 12,
+        left: 12,
+        right: 12,
+        background:
+          "linear-gradient(180deg, rgba(14, 14, 14, 0.94), rgba(5, 5, 5, 0.86)), var(--hud-stripe)",
+        backdropFilter: "blur(10px) saturate(1.06)",
         display: "flex",
         flexDirection: "column",
-        padding: "10px 14px",
-        gap: 10,
-        color: "#e0e0e0",
+        padding: "8px 10px 9px",
+        gap: 8,
+        color: "var(--hud-text)",
         fontSize: 13,
-        zIndex: 100,
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 10px 28px rgba(0,0,0,0.24)",
+        zIndex: 140,
+        border: "1px solid rgba(255,255,255,0.2)",
+        borderLeft: "5px solid var(--hud-gold)",
+        borderRadius: "var(--hud-radius)",
+        boxShadow: "var(--hud-shadow)",
         pointerEvents: "auto",
+        maxHeight: "min(154px, calc(100vh - 24px))",
+        overflowY: "auto",
+        scrollbarWidth: "none",
       }}
     >
       {/* Row 1: status info + world/timeline selectors + mode toggle + play */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         {/* Left: world name + status + time */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <span style={{ fontWeight: 700, fontSize: 15, whiteSpace: "nowrap" }}>
-            🌍 {worldName}
+        <div style={worldIdentityStyle}>
+          <span style={worldMarkStyle}>界</span>
+          <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+            {worldName}
           </span>
           <span style={{
             width: 8, height: 8, borderRadius: "50%",
             background: statusColor,
             animation: (isBusy || isReplaying) ? "pulse 1s infinite" : "pulse 2s infinite",
             flexShrink: 0,
+            boxShadow: `0 0 0 2px rgba(0,0,0,0.78), 0 0 12px ${statusColor}`,
           }} />
-          <span style={{ fontSize: 11, opacity: 0.78, whiteSpace: "nowrap" }}>{statusLabel}</span>
-          <span style={{ opacity: 0.45 }}>|</span>
-          <span style={{ fontSize: 12, color: "#dfe6e9", whiteSpace: "nowrap" }}>{timeLabel}</span>
+          <span style={{ fontSize: 11, color: "var(--hud-muted)", whiteSpace: "nowrap" }}>{statusLabel}</span>
+          <span style={{ opacity: 0.35 }}>|</span>
+          <span style={timePillStyle}>{timeLabel}</span>
         </div>
 
         {/* Right: mode toggle + play/pause */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginLeft: "auto" }}>
           {/* Mode toggle: Run / Replay */}
           <div style={modeToggleContainerStyle}>
             <button
@@ -351,12 +359,13 @@ export function TopBar({
             style={{
               ...primaryBtnStyle,
               background: autoPlayEnabled
-                ? (inReplayMode ? "rgba(225,112,85,0.28)" : "rgba(116,185,255,0.24)")
-                : (inReplayMode ? "rgba(225,112,85,0.14)" : "rgba(116,185,255,0.14)"),
-              borderColor: inReplayMode ? "rgba(225,112,85,0.5)" : "rgba(116,185,255,0.45)",
+                ? "var(--hud-paper)"
+                : "var(--hud-gold)",
+              borderColor: "rgba(0,0,0,0.78)",
+              color: "#0b0b0b",
               cursor: (inRunMode && autoPlayToggleDisabled) ? "wait" : "pointer",
               opacity: (inRunMode && autoPlayToggleDisabled) ? 0.6 : 1,
-              minWidth: 60,
+              minWidth: 88,
             }}
           >
             {autoPlayEnabled
@@ -369,15 +378,15 @@ export function TopBar({
       {/* Replay progress bar (only in replay mode) */}
       {inReplayMode && replayProgress && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px" }}>
-          <span style={{ fontSize: 11, color: "#e17055", fontWeight: 600, whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 11, color: "var(--hud-gold)", fontWeight: 800, whiteSpace: "nowrap" }}>
             {replayProgress.current}/{replayProgress.total}
           </span>
-          <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
+          <div style={{ flex: 1, height: 5, background: "rgba(255,255,255,0.1)", borderRadius: 1, overflow: "hidden" }}>
             <div style={{
               height: "100%",
               width: `${replayProgress.total > 0 ? (replayProgress.current / replayProgress.total) * 100 : 0}%`,
-              background: "linear-gradient(90deg, #e17055, #f39c12)",
-              borderRadius: 2,
+              background: "linear-gradient(90deg, var(--hud-gold), var(--hud-blue))",
+              borderRadius: 1,
               transition: "width 0.3s ease",
             }} />
           </div>
@@ -385,14 +394,14 @@ export function TopBar({
       )}
 
       {/* Row 2: Management + Tools */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+      <div style={commandRowStyle}>
         
         {/* Left: World & Timeline Management */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", minWidth: 0 }}>
           {/* World selector */}
           {allWorlds.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontSize: 11, opacity: 0.6, whiteSpace: "nowrap" }}>{t("topbar.worldLabel")}</span>
+            <div style={fieldGroupStyle}>
+              <span style={fieldLabelStyle}>{t("topbar.worldLabel")}</span>
               <select value={selectedWorldId} onChange={handleWorldChange}
                 disabled={isBusy} style={{ ...selectStyle, maxWidth: 180 }}>
                 {availableWorlds.length > 0 && (
@@ -415,8 +424,8 @@ export function TopBar({
 
           {/* Timeline selector */}
           {timelines.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontSize: 11, opacity: 0.6, whiteSpace: "nowrap" }}>{t("topbar.timelineLabel")}</span>
+            <div style={fieldGroupStyle}>
+              <span style={fieldLabelStyle}>{t("topbar.timelineLabel")}</span>
               <select value={selectedTimelineId} onChange={handleTimelineChange}
                 disabled={isBusy} style={{ ...selectStyle, maxWidth: 180 }}>
                 {timelines.map((tl, idx) => (
@@ -434,16 +443,16 @@ export function TopBar({
 
           {inRunMode && (
             <>
-              <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.12)", flexShrink: 0, margin: "0 2px" }} />
+              <span style={dividerStyle} />
               <button
                 onClick={onNewTimeline}
                 disabled={isBusy}
                 style={{
                   ...secondaryBtnStyle,
                   borderRadius: 999,
-                  color: "#a3d8ff",
-                  borderColor: "rgba(116,185,255,0.4)",
-                  background: "rgba(116,185,255,0.12)",
+                  color: "var(--hud-blue)",
+                  borderColor: "rgba(68,216,255,0.5)",
+                  background: "rgba(68,216,255,0.12)",
                   cursor: isBusy ? "wait" : "pointer",
                   opacity: isBusy ? 0.7 : 1,
                 }}
@@ -463,7 +472,7 @@ export function TopBar({
         </div>
 
         {/* Right: feature entries + tools */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", justifyContent: "flex-end", marginLeft: "auto" }}>
           <button onClick={() => navigate("/timeline")} style={chipBtnStyle(false)}>{t("topbar.eventLog")}</button>
           <button
             onClick={() => setGodPanelOpen(true)}
@@ -484,9 +493,9 @@ export function TopBar({
 
           {isDevMode && (
             <>
-              <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.12)", flexShrink: 0, margin: "0 2px" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 11, opacity: 0.72, whiteSpace: "nowrap" }}>{t("topbar.tickLabel")}</span>
+              <span style={dividerStyle} />
+              <div style={fieldGroupStyle}>
+                <span style={fieldLabelStyle}>{t("topbar.tickLabel")}</span>
                 <select
                   value={String(worldInfo?.sceneConfig.tickDurationMinutes ?? 15)}
                   onChange={handleDevTickGranularityChange}
@@ -506,14 +515,14 @@ export function TopBar({
             </>
           )}
 
-          <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.12)", flexShrink: 0, margin: "0 2px" }} />
+          <span style={dividerStyle} />
 
           <button 
             onClick={onToggleDevMode} 
             style={chipBtnStyle(isDevMode)} 
             title={isDevMode ? t("topbar.disableDevMode") : t("topbar.enableDevMode")}
           >
-            {isDevMode ? "🛠️ Dev" : "🛠️"}
+            {isDevMode ? "DEV ON" : "DEV"}
           </button>
 
           <LanguageToggle />
@@ -536,10 +545,11 @@ export function TopBar({
       {showPauseToast && typeof document !== "undefined" && createPortal(
         <div style={{
           position: "fixed", top: 72, left: "50%", transform: "translateX(-50%)",
-          background: "rgba(10, 14, 28, 0.95)", border: "1px solid rgba(116,185,255,0.4)",
-          color: "#dff3ff", padding: "8px 16px", borderRadius: 999, fontSize: 13, fontWeight: 500,
-          zIndex: 9999, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", animation: "slideDownFade 3.5s forwards",
+          background: "rgba(8, 8, 8, 0.95)", border: "1px solid rgba(255,216,77,0.5)",
+          color: "var(--hud-gold)", padding: "8px 16px", borderRadius: 4, fontSize: 13, fontWeight: 800,
+          zIndex: 9999, boxShadow: "var(--hud-shadow)", animation: "slideDownFade 3.5s forwards",
           pointerEvents: "none", display: "flex", alignItems: "center", gap: 6,
+          clipPath: "var(--hud-cut-corners)",
         }}>
           <span>⏸️</span> {t("topbar.pauseToast")}
         </div>,
@@ -562,42 +572,54 @@ export function TopBar({
 // --- Styles ---
 
 const primaryBtnStyle: CSSProperties = {
-  color: "#fff",
-  borderRadius: 999,
-  padding: "6px 14px",
+  color: "#0a0a0a",
+  borderRadius: 3,
+  padding: "8px 17px",
   fontSize: 12,
   border: "1px solid",
+  fontWeight: 900,
+  boxShadow: "4px 4px 0 rgba(0,0,0,0.36)",
   transition: "all 0.2s",
+  clipPath: "var(--hud-cut-corners)",
 };
 
 const secondaryBtnStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.08)",
-  border: "1px solid rgba(255,255,255,0.15)",
-  color: "#e0e0e0",
-  borderRadius: 8,
-  padding: "6px 12px",
+  background: "rgba(12,12,12,0.78)",
+  border: "1px solid rgba(255,255,255,0.16)",
+  color: "var(--hud-text)",
+  borderRadius: 3,
+  padding: "7px 11px",
   fontSize: 12,
+  fontWeight: 850,
+  clipPath: "var(--hud-cut-corners)",
 };
 
 const selectStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.08)",
-  border: "1px solid rgba(255,255,255,0.15)",
-  color: "#e0e0e0",
-  borderRadius: 999,
-  padding: "6px 10px",
+  background: "rgba(5,5,5,0.82)",
+  border: "1px solid rgba(255,255,255,0.22)",
+  color: "var(--hud-text)",
+  borderRadius: 3,
+  padding: "7px 10px",
   fontSize: 12,
+  outline: "none",
+  boxShadow: "2px 2px 0 rgba(0,0,0,0.25)",
 };
 
 function chipBtnStyle(active: boolean): CSSProperties {
   return {
-    background: active ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.08)",
-    border: `1px solid ${active ? "rgba(116,185,255,0.42)" : "rgba(255,255,255,0.15)"}`,
-    color: active ? "#dff3ff" : "#e0e0e0",
-    borderRadius: 999,
-    padding: "6px 12px",
+    background: active
+      ? "var(--hud-gold)"
+      : "rgba(255,255,255,0.07)",
+    border: `1px solid ${active ? "rgba(0,0,0,0.78)" : "rgba(255,255,255,0.16)"}`,
+    color: active ? "var(--hud-ink)" : "var(--hud-text)",
+    borderRadius: 3,
+    padding: "7px 11px",
     cursor: "pointer",
     fontSize: 12,
+    fontWeight: active ? 900 : 750,
     transition: "all 0.2s",
+    boxShadow: active ? "4px 4px 0 rgba(0,0,0,0.32)" : "none",
+    clipPath: "var(--hud-cut-corners)",
   };
 }
 
@@ -605,27 +627,30 @@ function newWorldBtnStyle(disabled: boolean): CSSProperties {
   return {
     background: disabled
       ? "rgba(255,255,255,0.08)"
-      : "linear-gradient(120deg, rgba(116,185,255,0.32), rgba(165,91,255,0.32))",
-    border: "1px solid rgba(168,193,255,0.55)",
-    color: "#f6f9ff",
-    borderRadius: 999,
-    padding: "6px 14px",
+      : "var(--hud-paper)",
+    border: "1px solid rgba(0,0,0,0.82)",
+    color: "#0b0b0b",
+    borderRadius: 3,
+    padding: "7px 14px",
     cursor: disabled ? "wait" : "pointer",
     fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.02em",
-    boxShadow: disabled ? "none" : "0 6px 18px rgba(116,185,255,0.18)",
+    fontWeight: 900,
+    letterSpacing: 0,
+    boxShadow: disabled ? "none" : "4px 4px 0 rgba(0,0,0,0.34)",
     transition: "all 0.2s",
     opacity: disabled ? 0.7 : 1,
+    clipPath: "var(--hud-cut-corners)",
   };
 }
 
 const modeToggleContainerStyle: CSSProperties = {
   display: "inline-flex",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,0.15)",
+  borderRadius: 3,
+  border: "1px solid rgba(255,255,255,0.18)",
   overflow: "hidden",
-  background: "rgba(255,255,255,0.04)",
+  background: "rgba(0,0,0,0.5)",
+  boxShadow: "3px 3px 0 rgba(0,0,0,0.28)",
+  clipPath: "var(--hud-cut-corners)",
 };
 
 function formatTimelineLabel(tl: TimelineMeta, index: number): string {
@@ -646,19 +671,96 @@ function formatTimelineLabel(tl: TimelineMeta, index: number): string {
 
 function modeToggleBtnStyle(active: boolean, mode: ViewMode): CSSProperties {
   const colors = mode === "run"
-    ? { activeBg: "rgba(0,184,148,0.22)", activeBorder: "rgba(0,184,148,0.5)", activeColor: "#a3f7bf" }
-    : { activeBg: "rgba(225,112,85,0.22)", activeBorder: "rgba(225,112,85,0.5)", activeColor: "#ffd2cf" };
+    ? { activeBg: "var(--hud-gold)", activeColor: "var(--hud-ink)" }
+    : { activeBg: "var(--hud-paper)", activeColor: "var(--hud-ink)" };
 
   return {
     background: active ? colors.activeBg : "transparent",
     border: "none",
-    borderRight: mode === "run" ? "1px solid rgba(255,255,255,0.1)" : "none",
+    borderRight: mode === "run" ? "1px solid rgba(255,255,255,0.16)" : "none",
     color: active ? colors.activeColor : "rgba(255,255,255,0.55)",
-    padding: "5px 14px",
+    padding: "7px 14px",
     fontSize: 12,
-    fontWeight: active ? 600 : 400,
+    fontWeight: active ? 900 : 750,
     cursor: "pointer",
     transition: "all 0.2s",
     whiteSpace: "nowrap",
   };
 }
+
+const worldIdentityStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  minWidth: 0,
+  flex: "1 1 320px",
+  padding: "5px 10px 5px 5px",
+  borderRadius: 3,
+  background: "linear-gradient(90deg, rgba(255,255,255,0.13), rgba(255,255,255,0.045))",
+  border: "1px solid rgba(255,255,255,0.16)",
+  clipPath: "var(--hud-cut-corners)",
+};
+
+const worldMarkStyle: CSSProperties = {
+  width: 28,
+  height: 28,
+  borderRadius: 2,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+  background: "var(--hud-gold)",
+  border: "1px solid rgba(0,0,0,0.72)",
+  color: "var(--hud-ink)",
+  fontWeight: 900,
+  boxShadow: "3px 3px 0 rgba(0,0,0,0.32)",
+  clipPath: "polygon(6px 0, 100% 0, 100% 100%, 0 100%, 0 6px)",
+};
+
+const timePillStyle: CSSProperties = {
+  borderRadius: 2,
+  padding: "4px 9px 5px",
+  background: "var(--hud-paper)",
+  border: "1px solid rgba(0,0,0,0.72)",
+  color: "var(--hud-ink)",
+  fontSize: 12,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+  clipPath: "var(--hud-cut-corners)",
+};
+
+const commandRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  flexWrap: "wrap",
+  padding: 6,
+  borderRadius: 3,
+  background: "rgba(255, 255, 255, 0.045)",
+  border: "1px solid rgba(255,255,255,0.1)",
+};
+
+const fieldGroupStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  minWidth: 0,
+};
+
+const fieldLabelStyle: CSSProperties = {
+  fontSize: 10,
+  color: "var(--hud-dim)",
+  letterSpacing: 0,
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+  fontWeight: 850,
+};
+
+const dividerStyle: CSSProperties = {
+  width: 2,
+  height: 20,
+  background: "linear-gradient(180deg, transparent, var(--hud-gold), transparent)",
+  flexShrink: 0,
+  margin: "0 2px",
+};

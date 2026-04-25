@@ -6,8 +6,52 @@
     <title>WorldX</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      :root { --top-ui-offset: 52px; }
-      body { overflow: hidden; background: #070819; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+      :root {
+        --top-ui-offset: 0px;
+        --hud-safe-top: 92px;
+        --hud-surface: rgba(12, 12, 12, 0.84);
+        --hud-surface-strong: rgba(7, 7, 7, 0.95);
+        --hud-surface-soft: rgba(255, 255, 255, 0.08);
+        --hud-paper: #f1eadb;
+        --hud-ink: #111111;
+        --hud-border: rgba(255, 255, 255, 0.2);
+        --hud-border-cool: rgba(68, 216, 255, 0.48);
+        --hud-text: #f8f3e6;
+        --hud-muted: rgba(248, 243, 230, 0.68);
+        --hud-dim: rgba(248, 243, 230, 0.46);
+        --hud-gold: #ffd84d;
+        --hud-blue: #44d8ff;
+        --hud-green: #65f29b;
+        --hud-red: #ff4f5e;
+        --hud-radius: 8px;
+        --hud-cut-corners: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+        --hud-stripe: repeating-linear-gradient(135deg, rgba(255, 216, 77, 0.2) 0 6px, transparent 6px 12px);
+        --hud-shadow: 0 20px 42px rgba(0, 0, 0, 0.42), 5px 5px 0 rgba(0, 0, 0, 0.26);
+      }
+      body {
+        overflow: hidden;
+        background: #050505;
+        font-family: 'Inter', 'PingFang SC', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      }
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 4;
+        background:
+          linear-gradient(180deg, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.1) 17%, rgba(0, 0, 0, 0) 42%),
+          linear-gradient(0deg, rgba(0, 0, 0, 0.48) 0%, rgba(0, 0, 0, 0) 28%),
+          linear-gradient(135deg, rgba(255, 216, 77, 0.06) 0 1px, transparent 1px 22px);
+        mix-blend-mode: normal;
+      }
+      button,
+      select {
+        font-family: inherit;
+      }
+      button {
+        -webkit-font-smoothing: antialiased;
+      }
       #background-root {
         position: fixed;
         inset: 0;
@@ -32,7 +76,7 @@
         pointer-events: none;
         z-index: 2;
       }
-      #ui-root { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+      #ui-root { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
       .character-label {
         position: absolute;
         display: flex;
@@ -47,16 +91,17 @@
         text-rendering: geometricPrecision;
       }
       .character-label__mbti {
-        padding: 2px 8px 3px;
-        border-radius: 7px;
-        background: rgba(0, 0, 0, 0.68);
-        color: #ffffff;
+        padding: 3px 8px 4px;
+        border-radius: 2px;
+        background: var(--hud-paper);
+        color: var(--hud-ink);
         font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
         font-size: 14px;
         font-weight: 800;
         line-height: 1;
-        letter-spacing: 0.03em;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+        letter-spacing: 0;
+        clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+        box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
       }
       .character-label__name-row {
         display: flex;
@@ -64,7 +109,7 @@
         gap: 3px;
       }
       .character-label__name {
-        color: #ffffff;
+        color: var(--hud-paper);
         font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
         font-size: 15px;
         font-weight: 800;
@@ -81,20 +126,22 @@
       }
       .character-label__action-pill {
         margin-top: 5px;
-        padding: 4px 10px;
-        background: rgba(255, 255, 255, 0.88);
-        color: #4b556b;
-        border-radius: 999px;
+        padding: 4px 10px 5px;
+        background: rgba(8, 8, 8, 0.86);
+        color: var(--hud-gold);
+        border-radius: 2px;
+        border: 1px solid rgba(255, 216, 77, 0.42);
         font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
         font-size: 12px;
-        font-weight: 500;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        font-weight: 800;
+        box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.34);
         pointer-events: none;
         max-width: 150px;
         text-align: center;
         white-space: normal;
         word-break: break-word;
         line-height: 1.3;
+        clip-path: var(--hud-cut-corners);
       }
       .custom-scrollbar::-webkit-scrollbar {
         width: 6px;

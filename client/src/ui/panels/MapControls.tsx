@@ -127,7 +127,7 @@ export function MapControls({
       const worldY = my / scale;
       eventBus.emit("camera_pan_to", { x: worldX, y: worldY });
     },
-    [eventBus]
+    [eventBus, miniWidth]
   );
 
   const [draggingMinimap, setDraggingMinimap] = useState(false);
@@ -148,29 +148,31 @@ export function MapControls({
   return (
     <>
       {/* Bottom-left: Minimap + Zoom */}
-      <div style={{ position: "fixed", bottom: 12, left: 12, zIndex: 90, pointerEvents: "auto" }}>
-        {/* Zoom bar */}
-          <div style={{ ...panelStyle, display: "flex", alignItems: "center", gap: 3, marginBottom: 6, padding: "3px 5px" }}>
+      <div style={{ position: "fixed", bottom: 14, left: 14, zIndex: 95, pointerEvents: "auto" }}>
+        <div style={mapDockStyle}>
+          <div style={mapDockHeaderStyle}>
+            <span style={{ color: "var(--hud-ink)", background: "var(--hud-gold)", padding: "3px 8px", borderRadius: 2, fontWeight: 950, letterSpacing: 0, textTransform: "uppercase", clipPath: "var(--hud-cut-corners)" }}>地图</span>
+            <span style={{ color: "var(--hud-muted)", fontWeight: 750 }}>{Math.round(zoom * 100)}%</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 7 }}>
           <ZoomBtn onClick={zoomOut} title={t("mapControls.zoomOut")}>−</ZoomBtn>
           <div
             onClick={zoomReset}
             title={t("mapControls.zoomReset")}
-            style={{ width: 44, textAlign: "center", fontSize: 11, color: "#ccc", cursor: "pointer", userSelect: "none" }}
+            style={{ flex: 1, textAlign: "center", fontSize: 11, color: "var(--hud-muted)", cursor: "pointer", userSelect: "none", fontWeight: 850 }}
           >
-            {Math.round(zoom * 100)}%
+            {t("mapControls.zoomReset")}
           </div>
           <ZoomBtn onClick={zoomIn} title={t("mapControls.zoomIn")}>+</ZoomBtn>
           <Divider />
           <ZoomBtn onClick={zoomFit} title={t("mapControls.zoomFit")}>⊡</ZoomBtn>
-        </div>
 
-        {/* Minimap */}
-        <div style={{ ...panelStyle, padding: 3, cursor: "crosshair", position: "relative" }}>
+          </div>
           <canvas
             ref={canvasRef}
             width={miniWidth}
             height={Math.round(miniWidth * (4608 / 8192))}
-            style={{ display: "block", borderRadius: 4 }}
+            style={minimapCanvasStyle}
             onClick={handleMinimapClick}
             onMouseDown={() => setDraggingMinimap(true)}
             onMouseUp={() => setDraggingMinimap(false)}
@@ -185,24 +187,25 @@ export function MapControls({
         <div
           style={{
             position: "fixed",
-            bottom: 16,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(6, 9, 20, 0.82)",
-            backdropFilter: "blur(10px)",
-            borderRadius: 14,
-            padding: "10px 16px",
-            color: "#d6d9e6",
+            bottom: 232,
+            left: 14,
+            background: "rgba(8, 8, 8, 0.88)",
+            backdropFilter: "blur(10px) saturate(1.04)",
+            borderRadius: 4,
+            padding: "10px 14px",
+            color: "var(--hud-text)",
             fontSize: 12,
             zIndex: 80,
             pointerEvents: "none",
             animation: "hintFade 9s ease forwards",
-            border: "1px solid rgba(255,255,255,0.08)",
-            boxShadow: "0 12px 28px rgba(0,0,0,0.28)",
-            minWidth: 320,
+            border: "1px solid rgba(255,255,255,0.18)",
+            borderLeft: "4px solid var(--hud-gold)",
+            boxShadow: "var(--hud-shadow)",
+            width: "min(340px, calc(100vw - 28px))",
+            clipPath: "var(--hud-cut-corners)",
           }}
         >
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, color: "#ffffff" }}>
+          <div style={{ fontWeight: 950, fontSize: 12, marginBottom: 4, color: "var(--hud-gold)", letterSpacing: 0 }}>
             {t("mapControls.hintTitle")}
           </div>
           <div>{t("mapControls.hintLine1")}</div>
@@ -225,14 +228,23 @@ function ZoomBtn({ children, onClick, title }: { children: React.ReactNode; onCl
       onClick={onClick}
       title={title}
       style={{
-        width: 28, height: 28, borderRadius: 5,
-        border: "1px solid rgba(255,255,255,0.12)",
-        background: "rgba(255,255,255,0.05)",
-        color: "#ddd", fontSize: 15, cursor: "pointer",
+        width: 28, height: 28, borderRadius: 2,
+        border: "1px solid rgba(255,255,255,0.16)",
+        background: "rgba(255,255,255,0.08)",
+        color: "var(--hud-text)", fontSize: 15, cursor: "pointer",
         display: "flex", alignItems: "center", justifyContent: "center",
+        fontWeight: 950,
+        boxShadow: "3px 3px 0 rgba(0,0,0,0.24)",
+        clipPath: "var(--hud-cut-corners)",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--hud-gold)";
+        e.currentTarget.style.color = "var(--hud-ink)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+        e.currentTarget.style.color = "var(--hud-text)";
+      }}
     >
       {children}
     </button>
@@ -243,9 +255,31 @@ function Divider() {
   return <div style={{ width: 1, height: 16, background: "rgba(255,255,255,0.12)" }} />;
 }
 
-const panelStyle: React.CSSProperties = {
-  background: "rgba(16,16,32,0.92)",
-  backdropFilter: "blur(8px)",
-  borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.1)",
+const mapDockStyle: React.CSSProperties = {
+  width: 222,
+  padding: 9,
+  borderRadius: 4,
+  background: "linear-gradient(180deg, rgba(12,12,12,0.92), rgba(5,5,5,0.82)), var(--hud-stripe)",
+  backdropFilter: "blur(10px) saturate(1.04)",
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderTop: "4px solid var(--hud-gold)",
+  boxShadow: "var(--hud-shadow)",
+  clipPath: "var(--hud-cut-corners)",
+};
+
+const mapDockHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 7,
+  fontSize: 10,
+};
+
+const minimapCanvasStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  borderRadius: 2,
+  cursor: "crosshair",
+  border: "1px solid rgba(255,255,255,0.18)",
+  boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.24), 3px 3px 0 rgba(0,0,0,0.28)",
 };

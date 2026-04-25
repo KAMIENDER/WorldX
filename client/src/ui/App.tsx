@@ -29,7 +29,7 @@ const queryClient = new QueryClient({
   },
 });
 
-const DEFAULT_TOP_BAR_HEIGHT = 52;
+const DEFAULT_TOP_BAR_HEIGHT = 76;
 
 class OverlayErrorBoundary extends Component<
   { children: ReactNode; onError: () => void },
@@ -105,6 +105,10 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
   const [showRegionBoundsOverlay, setShowRegionBoundsOverlay] = useState(false);
   const [showMainAreaPointsOverlay, setShowMainAreaPointsOverlay] = useState(false);
   const [showInteractiveObjectsOverlay, setShowInteractiveObjectsOverlay] = useState(false);
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(
+    () => (typeof window === "undefined" ? 1200 : window.innerWidth),
+  );
   const isOverlayRoute =
     location.pathname === "/timeline";
   const hideMainChrome = isOverlayRoute || isCreateRoute;
@@ -115,14 +119,24 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
   const startTransitionTitle =
     worldInfo?.sceneConfig.multiDay.newDayText ||
     (worldInfo?.sceneConfig.sceneType === "open" ? t("app.defaultStartTransitionOpen") : t("app.defaultStartTransitionClosed"));
+  const statePanelRightOffset = sidePanelOpen && viewportWidth >= 900 ? 424 : 14;
 
   useEffect(() => {
     eventBus.emit("set_cycle_ticks", ticksPerScene);
   }, [ticksPerScene, eventBus]);
 
   useEffect(() => {
-    const topOffset = hideMainChrome ? 0 : Math.max(topBarHeight, DEFAULT_TOP_BAR_HEIGHT);
-    document.documentElement.style.setProperty("--top-ui-offset", `${topOffset}px`);
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const hudSafeTop = hideMainChrome
+      ? 0
+      : Math.max(topBarHeight + 16, DEFAULT_TOP_BAR_HEIGHT);
+    document.documentElement.style.setProperty("--top-ui-offset", "0px");
+    document.documentElement.style.setProperty("--hud-safe-top", `${hudSafeTop}px`);
 
     const rafId = window.requestAnimationFrame(() => {
       window.dispatchEvent(new Event("resize"));
@@ -443,7 +457,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
               worldName={worldInfo.worldName}
               worldDescription={worldInfo.originalPrompt?.trim() || worldInfo.worldDescription}
               hasRun={(worldInfo.timelineTickCount ?? 0) > 0}
-              topOffset={Math.max(topBarHeight, DEFAULT_TOP_BAR_HEIGHT)}
+              topOffset={Math.max(topBarHeight + 16, DEFAULT_TOP_BAR_HEIGHT)}
             />
           )}
           <SidePanel
@@ -452,6 +466,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
             onSelect={setSelectedCharId}
             onToggleFollow={handleToggleFollowChar}
             events={events}
+            onOpenChange={setSidePanelOpen}
           />
           <PanelErrorBoundary
             label="DialoguePanel"
@@ -471,6 +486,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
           <MapControls eventBus={eventBus} />
           <RuntimeStatePanel
             visible={isDevMode}
+            rightOffset={statePanelRightOffset}
             refreshKey={`${gameTime.day}:${gameTime.tick}:${events[0]?.id ?? ""}:${worldInfo?.currentTimelineId ?? ""}`}
           />
           <SceneTransition

@@ -13,9 +13,11 @@ type TabKey = "objects" | "globals" | "changes";
 export function RuntimeStatePanel({
   visible,
   refreshKey,
+  rightOffset = 14,
 }: {
   visible: boolean;
   refreshKey?: string | number;
+  rightOffset?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<TabKey>("objects");
@@ -72,7 +74,7 @@ export function RuntimeStatePanel({
     return (
       <button
         onClick={() => setOpen(true)}
-        style={collapsedButtonStyle}
+        style={{ ...collapsedButtonStyle, right: rightOffset }}
         title="世界状态"
       >
         世界状态
@@ -81,7 +83,7 @@ export function RuntimeStatePanel({
   }
 
   return (
-    <div style={panelStyle}>
+    <div style={{ ...panelStyle, right: rightOffset }}>
       <div style={headerStyle}>
         <div>
           <div style={titleStyle}>世界状态</div>
@@ -250,27 +252,29 @@ function formatGlobalValue(value: string): string {
 
 const collapsedButtonStyle: CSSProperties = {
   position: "fixed",
-  right: 12,
-  bottom: 12,
-  zIndex: 110,
+  right: 14,
+  bottom: 14,
+  zIndex: 118,
   pointerEvents: "auto",
-  height: 32,
-  padding: "0 12px",
-  borderRadius: 6,
-  border: "1px solid rgba(120, 190, 255, 0.42)",
-  background: "rgba(7, 13, 24, 0.88)",
-  color: "#dff1ff",
+  height: 36,
+  padding: "0 14px",
+  borderRadius: 3,
+  border: "1px solid rgba(0,0,0,0.78)",
+  background: "var(--hud-gold)",
+  color: "var(--hud-ink)",
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 950,
   cursor: "pointer",
-  boxShadow: "0 10px 24px rgba(0,0,0,0.28)",
+  boxShadow: "var(--hud-shadow)",
+  letterSpacing: 0,
+  clipPath: "var(--hud-cut-corners)",
 };
 
 const panelStyle: CSSProperties = {
   position: "fixed",
-  right: 12,
-  bottom: 12,
-  zIndex: 110,
+  right: 14,
+  bottom: 14,
+  zIndex: 118,
   width: 380,
   maxWidth: "calc(100vw - 24px)",
   maxHeight: "min(560px, calc(100vh - 96px))",
@@ -278,12 +282,14 @@ const panelStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   overflow: "hidden",
-  borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(9, 14, 24, 0.94)",
-  color: "#edf2fb",
-  boxShadow: "0 18px 48px rgba(0,0,0,0.45)",
-  backdropFilter: "blur(12px)",
+  borderRadius: 4,
+  border: "1px solid rgba(255,255,255,0.2)",
+  borderTop: "4px solid var(--hud-gold)",
+  background: "linear-gradient(180deg, rgba(12,12,12,0.95), rgba(5,5,5,0.88)), var(--hud-stripe)",
+  color: "var(--hud-text)",
+  boxShadow: "var(--hud-shadow)",
+  backdropFilter: "blur(10px) saturate(1.04)",
+  clipPath: "var(--hud-cut-corners)",
 };
 
 const headerStyle: CSSProperties = {
@@ -291,29 +297,32 @@ const headerStyle: CSSProperties = {
   alignItems: "flex-start",
   justifyContent: "space-between",
   gap: 10,
-  padding: "10px 10px 8px",
-  borderBottom: "1px solid rgba(255,255,255,0.08)",
+  padding: "12px 12px 9px",
+  borderBottom: "1px solid rgba(255,255,255,0.12)",
 };
 
 const titleStyle: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 800,
+  fontSize: 14,
+  fontWeight: 950,
+  letterSpacing: 0,
 };
 
 const subtitleStyle: CSSProperties = {
   marginTop: 3,
   fontSize: 10,
-  color: "rgba(237,242,251,0.56)",
+  color: "var(--hud-dim)",
 };
 
 const iconButtonStyle: CSSProperties = {
   width: 26,
   height: 26,
-  borderRadius: 5,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.06)",
-  color: "#edf2fb",
+  borderRadius: 2,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.08)",
+  color: "var(--hud-text)",
   cursor: "pointer",
+  fontWeight: 950,
+  clipPath: "var(--hud-cut-corners)",
 };
 
 const tabsStyle: CSSProperties = {
@@ -321,17 +330,19 @@ const tabsStyle: CSSProperties = {
   gridTemplateColumns: "1fr 1fr 1fr",
   gap: 4,
   padding: 8,
-  borderBottom: "1px solid rgba(255,255,255,0.06)",
+  borderBottom: "1px solid rgba(255,255,255,0.1)",
 };
 
 const tabButtonStyle = (active: boolean): CSSProperties => ({
   height: 28,
-  borderRadius: 5,
-  border: `1px solid ${active ? "rgba(120,190,255,0.45)" : "rgba(255,255,255,0.08)"}`,
-  background: active ? "rgba(57, 132, 214, 0.22)" : "rgba(255,255,255,0.04)",
-  color: active ? "#e8f5ff" : "rgba(237,242,251,0.68)",
+  borderRadius: 2,
+  border: `1px solid ${active ? "rgba(0,0,0,0.78)" : "rgba(255,255,255,0.12)"}`,
+  background: active ? "var(--hud-gold)" : "rgba(255,255,255,0.05)",
+  color: active ? "var(--hud-ink)" : "rgba(248,243,230,0.7)",
   fontSize: 11,
+  fontWeight: active ? 950 : 750,
   cursor: "pointer",
+  clipPath: "var(--hud-cut-corners)",
 });
 
 const bodyStyle: CSSProperties = {
@@ -346,17 +357,19 @@ const sectionStyle: CSSProperties = {
 
 const sectionTitleStyle: CSSProperties = {
   fontSize: 11,
-  fontWeight: 700,
-  color: "rgba(237,242,251,0.72)",
+  fontWeight: 900,
+  color: "var(--hud-gold)",
 };
 
 const rowStyle: CSSProperties = {
-  borderRadius: 6,
-  border: "1px solid rgba(255,255,255,0.08)",
-  background: "rgba(255,255,255,0.045)",
+  borderRadius: 3,
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderLeft: "3px solid rgba(255,216,77,0.55)",
+  background: "rgba(255,255,255,0.055)",
   padding: 8,
   display: "grid",
   gap: 6,
+  clipPath: "var(--hud-cut-corners)",
 };
 
 const rowTopStyle: CSSProperties = {
@@ -368,7 +381,7 @@ const rowTopStyle: CSSProperties = {
 
 const nameStyle: CSSProperties = {
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 850,
   minWidth: 0,
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -377,40 +390,42 @@ const nameStyle: CSSProperties = {
 
 const idStyle: CSSProperties = {
   fontSize: 10,
-  color: "rgba(237,242,251,0.42)",
+  color: "var(--hud-dim)",
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 };
 
 const stateChipStyle = (changed: boolean): CSSProperties => ({
-  borderRadius: 5,
+  borderRadius: 2,
   border: `1px solid ${changed ? "rgba(255, 185, 86, 0.42)" : "rgba(111, 222, 151, 0.32)"}`,
-  background: changed ? "rgba(255, 185, 86, 0.14)" : "rgba(111, 222, 151, 0.11)",
-  color: changed ? "#ffd69c" : "#bdf7cc",
+  background: changed ? "rgba(255, 216, 77, 0.16)" : "rgba(101, 242, 155, 0.12)",
+  color: changed ? "var(--hud-gold)" : "#bdf7cc",
   padding: "2px 6px",
   fontSize: 10,
-  fontWeight: 700,
+  fontWeight: 900,
+  clipPath: "var(--hud-cut-corners)",
 });
 
 const mutedChipStyle: CSSProperties = {
-  borderRadius: 5,
+  borderRadius: 2,
   background: "rgba(255,255,255,0.08)",
-  color: "rgba(237,242,251,0.62)",
+  color: "rgba(248,243,230,0.62)",
   padding: "2px 6px",
   fontSize: 10,
+  fontWeight: 850,
 };
 
 const descriptionStyle: CSSProperties = {
   fontSize: 11,
-  color: "rgba(237,242,251,0.72)",
+  color: "rgba(248,243,230,0.72)",
   lineHeight: 1.45,
   wordBreak: "break-word",
 };
 
 const detailLineStyle: CSSProperties = {
   fontSize: 10,
-  color: "rgba(237,242,251,0.58)",
+  color: "rgba(248,243,230,0.58)",
   lineHeight: 1.35,
 };
 
@@ -419,14 +434,14 @@ const checkRowStyle: CSSProperties = {
   alignItems: "center",
   gap: 6,
   fontSize: 11,
-  color: "rgba(237,242,251,0.68)",
+  color: "rgba(248,243,230,0.68)",
 };
 
 const emptyStyle: CSSProperties = {
   padding: "20px 10px",
-  borderRadius: 6,
+  borderRadius: 3,
   border: "1px dashed rgba(255,255,255,0.12)",
-  color: "rgba(237,242,251,0.45)",
+  color: "rgba(248,243,230,0.45)",
   fontSize: 12,
   textAlign: "center",
 };
@@ -434,7 +449,7 @@ const emptyStyle: CSSProperties = {
 const errorStyle: CSSProperties = {
   margin: "8px 10px 0",
   padding: "7px 8px",
-  borderRadius: 6,
+  borderRadius: 3,
   border: "1px solid rgba(255, 105, 105, 0.25)",
   background: "rgba(255, 105, 105, 0.1)",
   color: "#ffb5b5",
