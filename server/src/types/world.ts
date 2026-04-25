@@ -80,6 +80,8 @@ export interface WorldActionConfig extends InteractionConfig {}
 export interface Effect {
   type:
     | "world_state"
+    | "object_state"
+    | "object_description"
     | "character_need"
     | "character_memory"
     | "character_emotion";

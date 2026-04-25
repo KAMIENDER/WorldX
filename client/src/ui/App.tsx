@@ -9,6 +9,7 @@ import { TopBar } from "./panels/TopBar";
 import { SidePanel } from "./panels/SidePanel";
 import { MapControls } from "./panels/MapControls";
 import { DialoguePanel } from "./panels/DialoguePanel";
+import { RuntimeStatePanel } from "./panels/RuntimeStatePanel";
 import { SceneTransition } from "./panels/SceneTransition";
 import { WorldIntroBanner } from "./panels/WorldIntroBanner";
 import { Timeline } from "./pages/Timeline";
@@ -39,6 +40,23 @@ class OverlayErrorBoundary extends Component<
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.warn("[OverlayErrorBoundary]", error, info);
     this.props.onError();
+  }
+  render() { return this.state.hasError ? null : this.props.children; }
+}
+
+class PanelErrorBoundary extends Component<
+  { children: ReactNode; label: string; resetKey: string },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.warn(`[${this.props.label}]`, error, info);
+  }
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false });
+    }
   }
   render() { return this.state.hasError ? null : this.props.children; }
 }
@@ -435,17 +453,26 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
             onToggleFollow={handleToggleFollowChar}
             events={events}
           />
-          <DialoguePanel
-            events={dialogueEvents.filter(
-              (e) => {
-                const d = e.data as DialogueEventData | undefined;
-                return d?.conversationId && !dismissedIds.has(d.conversationId);
-              }
-            )}
-            ticksPerScene={ticksPerScene}
-            onDismiss={(id) => setDismissedIds((prev) => new Set(prev).add(id))}
-          />
+          <PanelErrorBoundary
+            label="DialoguePanel"
+            resetKey={`${dialogueEvents.length}:${dialogueEvents[dialogueEvents.length - 1]?.id ?? ""}`}
+          >
+            <DialoguePanel
+              events={dialogueEvents.filter(
+                (e) => {
+                  const d = e.data as DialogueEventData | undefined;
+                  return d?.conversationId && !dismissedIds.has(d.conversationId);
+                }
+              )}
+              ticksPerScene={ticksPerScene}
+              onDismiss={(id) => setDismissedIds((prev) => new Set(prev).add(id))}
+            />
+          </PanelErrorBoundary>
           <MapControls eventBus={eventBus} />
+          <RuntimeStatePanel
+            visible={isDevMode}
+            refreshKey={`${gameTime.day}:${gameTime.tick}:${events[0]?.id ?? ""}:${worldInfo?.currentTimelineId ?? ""}`}
+          />
           <SceneTransition
             day={gameTime.day + (transitionPhase === "ending" ? 1 : 0)}
             phase={transitionPhase}

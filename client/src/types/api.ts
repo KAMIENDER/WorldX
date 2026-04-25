@@ -145,6 +145,57 @@ export interface LocationInfo {
   description: string;
 }
 
+export interface RuntimeObjectStateInfo {
+  objectId: string;
+  name: string;
+  locationId: string;
+  locationName: string;
+  state: string;
+  stateDescription: string;
+  currentUsers: string[];
+  knownStates: string[];
+}
+
+export interface RuntimeGlobalStateInfo {
+  key: string;
+  value: string;
+  isSystem: boolean;
+}
+
+export interface RuntimeWorldStateChangeInfo {
+  id: string;
+  gameDay: number;
+  gameTick: number;
+  location: string;
+  locationName: string;
+  data: {
+    description?: string;
+    objectUpdates?: Array<{
+      objectId: string;
+      objectName?: string;
+      previousState?: string;
+      state?: string;
+      stateDescription?: string;
+      reason?: string;
+    }>;
+    worldStateUpdates?: Array<{
+      key: string;
+      previousValue?: string | null;
+      value: string;
+      reason?: string;
+    }>;
+    [key: string]: unknown;
+  };
+}
+
+export interface RuntimeStateInfo {
+  currentTimelineId: string | null;
+  gameTime: WorldTimeInfo;
+  objects: RuntimeObjectStateInfo[];
+  globalStates: RuntimeGlobalStateInfo[];
+  recentWorldStateChanges: RuntimeWorldStateChangeInfo[];
+}
+
 export interface MainAreaPointInfo {
   id: string;
   name: string;

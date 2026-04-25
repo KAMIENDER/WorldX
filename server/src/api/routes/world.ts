@@ -4,6 +4,7 @@ import { Router } from "express";
 import { appContext } from "../../services/app-context.js";
 import { buildSceneRuntimeInfo, buildWorldTimeInfo } from "../../utils/time-helpers.js";
 import * as worldStateStore from "../../store/world-state-store.js";
+import * as eventStore from "../../store/event-store.js";
 import {
   GENERATED_WORLDS_DIR,
   LIBRARY_WORLDS_DIR,
@@ -187,6 +188,58 @@ router.get("/locations/:id/state", (req, res) => {
       name: c.profile.name,
       action: c.state.currentAction,
     })),
+  });
+});
+
+router.get("/runtime-state", (_req, res) => {
+  if (!appContext.hasWorld) {
+    res.status(503).json({ error: "No world loaded" });
+    return;
+  }
+
+  const wm = appContext.worldManager;
+  const locations = wm.getAllLocations();
+  const locationNames = new Map(locations.map((loc) => [loc.id, loc.name]));
+  const objectStates = locations.flatMap((loc) =>
+    wm.getLocationObjects(loc.id).map((object) => ({
+      objectId: object.objectId,
+      name: object.name,
+      locationId: loc.id,
+      locationName: loc.name,
+      state: object.state,
+      stateDescription: object.stateDescription,
+      currentUsers: object.currentUsers,
+      knownStates: [
+        object.defaultState,
+        ...object.interactions.flatMap((interaction) => interaction.availableWhenState ?? []),
+      ].filter((state, index, all) => state && all.indexOf(state) === index),
+    })),
+  );
+
+  const recentWorldStateChanges = eventStore
+    .queryEvents({ type: "world_state_change", limit: 20 })
+    .reverse()
+    .map((event) => ({
+      id: event.id,
+      gameDay: event.gameDay,
+      gameTick: event.gameTick,
+      location: event.location,
+      locationName: locationNames.get(event.location) ?? event.location,
+      data: event.data,
+    }));
+
+  res.json({
+    currentTimelineId: appContext.timelineManager.getCurrentTimelineId(),
+    gameTime: buildWorldTimeInfo(wm.getCurrentTime(), wm.getSceneConfig()),
+    objects: objectStates,
+    globalStates: wm.getAllGlobalState().map((entry) => ({
+      ...entry,
+      isSystem:
+        entry.key === "current_day" ||
+        entry.key === "current_tick" ||
+        entry.key.startsWith("dialogue_session:"),
+    })),
+    recentWorldStateChanges,
   });
 });
 

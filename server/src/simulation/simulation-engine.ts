@@ -14,6 +14,7 @@ import type { LLMClient } from "../llm/llm-client.js";
 import type { PromptBuilder } from "../llm/prompt-builder.js";
 import { DecisionMaker } from "./decision-maker.js";
 import { DialogueGenerator } from "./dialogue-generator.js";
+import { WorldStateUpdater } from "./world-state-updater.js";
 import { buildPerception } from "./perceiver.js";
 import { buildActionMenu } from "./action-menu-builder.js";
 import { executeAction, completeAction } from "./action-executor.js";
@@ -93,6 +94,7 @@ async function allSettledWithConcurrency<T, R>(
 export class SimulationEngine {
   private decisionMaker: DecisionMaker;
   private dialogueGenerator: DialogueGenerator;
+  private worldStateUpdater: WorldStateUpdater;
   private memoryEvalQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -112,6 +114,12 @@ export class SimulationEngine {
       promptBuilder,
       characterManager,
       worldManager,
+    );
+    this.worldStateUpdater = new WorldStateUpdater(
+      llmClient,
+      promptBuilder,
+      worldManager,
+      characterManager,
     );
   }
 
@@ -209,6 +217,7 @@ export class SimulationEngine {
       events.push(...await this.runMicroReflectionWave(gameTime));
     }
 
+    events.push(...await this.worldStateUpdater.updateFromEvents(events, gameTime));
     this.scheduleRecentMemoryEvaluation(gameTime);
     return this.finalizeTickEvents(events);
   }

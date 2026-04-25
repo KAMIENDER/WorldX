@@ -12,7 +12,7 @@ import { buildCharacterNameMap } from "../utils/event-format";
 interface DialogueSession {
   conversationId: string;
   participants: string[];
-  turns: DialogueTurn[];
+  turns: Array<DialogueTurn | undefined>;
   isFinal: boolean;
   lastUpdatedMs: number;
   latestAbsTick: number;
@@ -22,6 +22,28 @@ interface DialogueSession {
 
 function absoluteTick(day: number, tick: number, ticksPerScene: number): number {
   return (day - 1) * ticksPerScene + tick;
+}
+
+function isDialogueTurn(value: unknown): value is DialogueTurn {
+  if (!value || typeof value !== "object") return false;
+  const turn = value as Partial<DialogueTurn>;
+  return typeof turn.speaker === "string" && typeof turn.content === "string";
+}
+
+function getValidTurns(turns: Array<DialogueTurn | undefined>): DialogueTurn[] {
+  return turns.filter(isDialogueTurn);
+}
+
+function mergeTurnsAtIndex(
+  existing: Array<DialogueTurn | undefined>,
+  incoming: DialogueTurn[],
+  startIndex: number,
+): Array<DialogueTurn | undefined> {
+  const merged = [...existing];
+  incoming.forEach((turn, idx) => {
+    merged[startIndex + idx] = turn;
+  });
+  return merged;
 }
 
 export function DialoguePanel({
@@ -45,14 +67,25 @@ export function DialoguePanel({
 
   const sessions = useMemo(() => {
     const map = new Map<string, DialogueSession>();
+    const orderedEvents = [...events].sort((a, b) => {
+      const absA = absoluteTick(a.gameDay, a.gameTick, ticksPerScene);
+      const absB = absoluteTick(b.gameDay, b.gameTick, ticksPerScene);
+      if (absA !== absB) return absA - absB;
+      return (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0);
+    });
 
-    for (const event of events) {
+    for (const event of orderedEvents) {
       const dialogue = event.data as DialogueEventData | undefined;
       if (!dialogue?.conversationId || !Array.isArray(dialogue.turns)) continue;
 
       const absTick = absoluteTick(event.gameDay, event.gameTick, ticksPerScene);
       const updatedAtMs = Date.parse(event.createdAt) || absTick;
       const existing = map.get(dialogue.conversationId);
+      const incomingTurns = dialogue.turns.filter(isDialogueTurn);
+      const turnIndexStart =
+        Number.isInteger(dialogue.turnIndexStart) && dialogue.turnIndexStart >= 0
+          ? dialogue.turnIndexStart
+          : existing?.turns.length ?? 0;
 
       if (!existing) {
         map.set(dialogue.conversationId, {
@@ -61,7 +94,7 @@ export function DialoguePanel({
             event.actorId || "unknown",
             event.targetId || "unknown",
           ],
-          turns: [...dialogue.turns],
+          turns: mergeTurnsAtIndex([], incomingTurns, dialogue.phase === "complete" ? 0 : turnIndexStart),
           isFinal: dialogue.isFinal,
           lastUpdatedMs: updatedAtMs,
           latestAbsTick: absTick,
@@ -75,7 +108,7 @@ export function DialoguePanel({
         map.set(dialogue.conversationId, {
           ...existing,
           participants: dialogue.participants || existing.participants,
-          turns: [...dialogue.turns],
+          turns: incomingTurns.length > 0 ? incomingTurns : existing.turns,
           isFinal: true,
           lastUpdatedMs: updatedAtMs,
           latestAbsTick: absTick,
@@ -85,14 +118,10 @@ export function DialoguePanel({
         continue;
       }
 
-      const mergedTurns = [...existing.turns];
-      dialogue.turns.forEach((turn, idx) => {
-        mergedTurns[dialogue.turnIndexStart + idx] = turn;
-      });
       map.set(dialogue.conversationId, {
         ...existing,
         participants: dialogue.participants || existing.participants,
-        turns: mergedTurns,
+        turns: mergeTurnsAtIndex(existing.turns, incomingTurns, turnIndexStart),
         isFinal: existing.isFinal || dialogue.isFinal,
         lastUpdatedMs: updatedAtMs,
         latestAbsTick: absTick,
@@ -136,6 +165,9 @@ export function DialoguePanel({
     visibleSessions.find((s) => s.conversationId === activeTab) ??
     visibleSessions[0];
   const summarySession = collapsed ? visibleSessions[0] : current;
+  const currentTurns = getValidTurns(current.turns);
+  const summaryTurns = getValidTurns(summarySession.turns);
+  const latestSummaryTurn = summaryTurns[summaryTurns.length - 1];
 
   const getSessionLabel = (s: DialogueSession) => {
     const [a, b] = s.participants;
@@ -189,8 +221,8 @@ export function DialoguePanel({
           </div>
           {collapsed && (
             <div style={{ color: "#888", fontSize: 11, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {summarySession.turns.length > 0
-                ? `${characterNames[summarySession.turns[summarySession.turns.length - 1].speaker] || summarySession.turns[summarySession.turns.length - 1].speaker}: ${summarySession.turns[summarySession.turns.length - 1].content}`
+              {latestSummaryTurn
+                ? `${characterNames[latestSummaryTurn.speaker] || latestSummaryTurn.speaker}: ${latestSummaryTurn.content}`
                 : t("dialogue.noContent")}
             </div>
           )}
@@ -333,13 +365,13 @@ export function DialoguePanel({
             className="dialogue-scroll"
             style={{ overflow: "auto", flex: 1, paddingRight: 4 }}
           >
-            {current.turns.map((turn, i) => (
+            {currentTurns.map((turn, i) => (
               <div
                 key={i}
                 style={{
                   padding: "6px 0",
                   borderBottom:
-                    i < current.turns.length - 1
+                    i < currentTurns.length - 1
                       ? "1px solid rgba(255,255,255,0.06)"
                       : "none",
                   animation: "fadeIn 0.4s ease",

@@ -9,7 +9,7 @@
 1. **入口层**：Express routes、WebSocket。
 2. **上下文层**：`AppContext` 负责装配和切换世界/时间线。
 3. **核心管理层**：`WorldManager`、`CharacterManager`、`MemoryManager`。
-4. **模拟执行层**：`SimulationEngine`、`DecisionMaker`、`DialogueGenerator`、perceiver/action-menu/action-executor。
+4. **模拟执行层**：`SimulationEngine`、`DecisionMaker`、`DialogueGenerator`、`WorldStateUpdater`、perceiver/action-menu/action-executor。
 5. **存储层**：SQLite store modules。
 
 ```mermaid
@@ -22,6 +22,7 @@ flowchart LR
   AppContext --> SimulationEngine
   SimulationEngine --> DecisionMaker
   SimulationEngine --> DialogueGenerator
+  SimulationEngine --> WorldStateUpdater
   SimulationEngine --> Perceiver["buildPerception"]
   SimulationEngine --> ActionMenu["buildActionMenu"]
   SimulationEngine --> ActionExecutor["executeAction / completeAction"]
@@ -250,6 +251,7 @@ library/worlds/<world_id>/timelines/<timeline_id>/
 - 调度动作执行。
 - 调度对话 session。
 - 调度小反思、日终反思和记忆评估。
+- 调度 LLM 世界状态 patch。
 - 生成事件并落库。
 - 跨天时执行转场和生命系统。
 
@@ -266,12 +268,35 @@ library/worlds/<world_id>/timelines/<timeline_id>/
 | `runDialogueSession()` | 生成对话 turn / finalize |
 | `runMicroReflectionWave()` | 小反思 |
 | `runReflection()` | 日终反思 |
+| `worldStateUpdater.updateFromEvents()` | 根据本 tick 事件更新物件/全局运行态 |
 | `finalizeTickEvents()` | 计算戏剧分、写事件 |
 | `runCycleTransition()` | 跨天流程 |
 
 边界：
 
 - 它编排流程，但具体感知、菜单、动作、对话生成拆到其他模块。
+
+## WorldStateUpdater
+
+文件：`server/src/simulation/world-state-updater.ts`
+
+`WorldStateUpdater` 负责把事件转成受控的世界运行态变化。
+
+流程：
+
+1. 收集本 tick 的 `action_start`、`action_end`、`movement`、`dialogue` 等事件摘要。
+2. 收集当前物件运行态和全局状态。
+3. 调用 LLM 生成 `WorldStatePatchSchema`。
+4. 校验 `objectId`、状态键、全局 key。
+5. 写入 `world_object_states` / `world_global_state`。
+6. 生成 `world_state_change` 事件。
+
+边界：
+
+- LLM 不直接写数据库，只输出 patch。
+- `stateDescription` 可以是自然语言；`state` 是短 machine key。
+- 不能更新 `current_day`、`current_tick`、`dialogue_session:*` 等系统键。
+- 可通过 `.env` 的 `WORLD_STATE_UPDATES_ENABLED=0` 关闭。
 
 ## DecisionMaker
 
@@ -409,6 +434,9 @@ server/configs/prompts/
 - `SIMULATION_DECISION_CONCURRENCY`
 - `SIMULATION_STRUCTURED_OUTPUT_MODE`
 - `SIMULATION_TIMEOUT_MS`
+- `WORLD_STATE_UPDATES_ENABLED`
+- `WORLD_STATE_UPDATE_MAX_EVENTS`
+- `WORLD_STATE_UPDATE_TIMEOUT_MS`
 
 边界：
 

@@ -447,6 +447,40 @@ function applyEffect(
       worldManager.setGlobal(effect.target, String(effect.value));
       break;
     }
+    case "object_state": {
+      const description =
+        effect.value &&
+        typeof effect.value === "object" &&
+        !Array.isArray(effect.value) &&
+        "description" in effect.value
+          ? String((effect.value as { description?: unknown }).description ?? "")
+          : undefined;
+      const state =
+        effect.value &&
+        typeof effect.value === "object" &&
+        !Array.isArray(effect.value) &&
+        "state" in effect.value
+          ? String((effect.value as { state?: unknown }).state ?? "")
+          : String(effect.value);
+      if (state.trim()) {
+        worldManager.updateObjectState(effect.target, state.trim(), description);
+      }
+      break;
+    }
+    case "object_description": {
+      const current = worldManager
+        .getAllLocations()
+        .flatMap((location) => worldManager.getLocationObjects(location.id))
+        .find((object) => object.id === effect.target);
+      if (current) {
+        worldManager.updateObjectState(
+          effect.target,
+          current.state,
+          String(effect.value ?? ""),
+        );
+      }
+      break;
+    }
     case "character_emotion":
       applyEmotionEffect(effect, charId, characterManager);
       break;

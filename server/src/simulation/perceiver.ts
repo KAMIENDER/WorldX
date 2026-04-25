@@ -88,13 +88,36 @@ export function buildPerception(
     toDay: gameTime.day,
     toTick: gameTime.tick,
   });
+  const localWorldStateChanges = eventStore.queryEvents({
+    type: "world_state_change",
+    location: state.location,
+    fromDay: gameTime.day,
+    fromTick: Math.max(0, gameTime.tick - 2),
+    toDay: gameTime.day,
+    toTick: gameTime.tick,
+  });
+  const globalWorldStateChanges = eventStore.queryEvents({
+    type: "world_state_change",
+    location: "global",
+    fromDay: gameTime.day,
+    fromTick: Math.max(0, gameTime.tick - 2),
+    toDay: gameTime.day,
+    toTick: gameTime.tick,
+  });
   const describeEventData = (e: (typeof recentEvents)[number]): string =>
     typeof e.data?.description === "string"
       ? e.data.description
       : JSON.stringify(e.data);
   const globalChanges = globalEvents.map((e) => `[广播] ${describeEventData(e)}`);
   const localChanges = recentEvents.map(describeEventData);
-  const recentEnvironmentChanges = [...globalChanges, ...localChanges];
+  const globalStateChanges = globalWorldStateChanges.map((e) => `[变化] ${describeEventData(e)}`);
+  const localStateChanges = localWorldStateChanges.map(describeEventData);
+  const recentEnvironmentChanges = [
+    ...globalChanges,
+    ...localChanges,
+    ...globalStateChanges,
+    ...localStateChanges,
+  ];
 
   const recentActions = getRecentActionDescriptions(charId, gameTime);
 

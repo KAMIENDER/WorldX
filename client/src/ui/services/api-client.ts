@@ -6,6 +6,7 @@ import type {
   SimulationEvent,
   WorldTimeInfo,
   LocationInfo,
+  RuntimeStateInfo,
   GameTime,
   MainAreaPointInfo,
   SceneConfigInfo,
@@ -140,6 +141,10 @@ export const apiClient = {
 
   getLocations(): Promise<LocationInfo[]> {
     return fetchJSON("/world/locations");
+  },
+
+  getRuntimeState(): Promise<RuntimeStateInfo> {
+    return fetchJSON("/world/runtime-state");
   },
 
   getCharacters(): Promise<CharacterInfo[]> {

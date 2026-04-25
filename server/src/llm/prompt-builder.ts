@@ -22,6 +22,7 @@ const TEMPLATE_NAMES = [
   "dialogue-finalize",
   "diary",
   "memory-eval",
+  "world-state-update",
   "micro-reflection",
   "reflection",
   "sandbox-chat",
@@ -282,6 +283,28 @@ export class PromptBuilder {
 
     const content = this.build("memory-eval", {
       memoryList,
+    });
+
+    return [{ role: "user", content }];
+  }
+
+  buildWorldStateUpdateMessages(params: {
+    day: number;
+    timeString: string;
+    worldName: string;
+    worldDescription: string;
+    eventSummary: string;
+    objectStateBlock: string;
+    worldStateBlock: string;
+  }): Message[] {
+    const content = this.build("world-state-update", {
+      day: String(params.day),
+      timeString: params.timeString,
+      worldName: params.worldName,
+      worldDescription: params.worldDescription,
+      eventSummary: params.eventSummary || "（本 tick 没有足以改变环境的事件）",
+      objectStateBlock: params.objectStateBlock || "（无可更新物件）",
+      worldStateBlock: params.worldStateBlock || "（无全局状态）",
     });
 
     return [{ role: "user", content }];

@@ -116,3 +116,39 @@ export const ReflectionSchema = z.object({
 });
 
 export type ReflectionOutput = z.infer<typeof ReflectionSchema>;
+
+/** 4.6 世界状态更新输出 */
+export const WorldStatePatchSchema = z.object({
+  objectUpdates: z
+    .array(
+      z.object({
+        objectId: z.string().min(1),
+        state: z
+          .string()
+          .min(1)
+          .max(40)
+          .regex(/^[a-z0-9_:-]+$/)
+          .optional(),
+        stateDescription: z.string().max(180).optional(),
+        reason: z.string().max(160).optional(),
+      }),
+    )
+    .max(8)
+    .default([]),
+  worldStateUpdates: z
+    .array(
+      z.object({
+        key: z
+          .string()
+          .min(1)
+          .max(60)
+          .regex(/^[a-zA-Z0-9_.:-]+$/),
+        value: z.string().max(160),
+        reason: z.string().max(160).optional(),
+      }),
+    )
+    .max(8)
+    .default([]),
+});
+
+export type WorldStatePatchOutput = z.infer<typeof WorldStatePatchSchema>;

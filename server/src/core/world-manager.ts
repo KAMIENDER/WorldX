@@ -478,6 +478,10 @@ export class WorldManager {
     return worldState.getGlobalState(key);
   }
 
+  getAllGlobalState(): { key: string; value: string }[] {
+    return worldState.getAllGlobalState();
+  }
+
   setGlobal(key: string, value: string): void {
     worldState.setGlobalState(key, value);
   }

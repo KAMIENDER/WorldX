@@ -322,6 +322,15 @@ durationTicks = Math.max(1, Math.ceil(durationMinutes / tickDurationMinutes))
 
 每个 tick 结束时调用 `finalizeTickEvents()`：
 
+在 `finalizeTickEvents()` 之前，`WorldStateUpdater` 会根据本 tick 已生成事件做一次受控的世界运行态更新：
+
+- LLM 只输出 patch，不直接写 DB。
+- `objectUpdates` 只能更新已有 `objectId` 的 `state` / `stateDescription`。
+- `worldStateUpdates` 只能写普通全局键，不能改 `current_day`、`current_tick`、`dialogue_session:*` 等系统键。
+- 成功应用的 patch 会生成一条 `world_state_change` 事件，下一 tick 角色会在感知里看到物件状态和最近环境变化。
+
+随后 `finalizeTickEvents()`：
+
 1. 给事件计算 `dramScore`。
 2. 标记高戏剧性事件。
 3. 对 dialogue 提取 quotes。
@@ -357,6 +366,7 @@ WebSocket 消息：
 - 每个空闲角色 1 次 `reactive_decision`。
 - 每个活跃对话每句 1 次 `dialogue_turn`。
 - 对话结束时 1 次 `dialogue_finalize`。
+- 每个有事件的 tick 最多 1 次 `world_state_update`，用于生成受控世界状态 patch。
 - 小反思触发时，每个符合条件角色 1 次 `micro_reflection`。
 - 后台记忆评估 1 次 `memory_eval`。
 - 日终反思时，每个符合条件角色 1 次 `reflection`。
