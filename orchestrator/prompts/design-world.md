@@ -30,7 +30,7 @@
   - `id`（snake_case，英文）
   - `name`（语言与用户输入一致）
   - `description`（语言与用户输入一致）
-  - `duration`（数字）
+  - `durationMinutes`（数字，真实世界分钟数，不要使用 tick 数）
   - `effects`（对象数组，如 `{ "type": "character_need", "need": "curiosity", "delta": 10 }` 或 `{ "type": "world_state", "target": "crowd_heat", "value": "higher" }`）
 - `regions`（数组）：0–8 项（与 `interactiveElements` 合计不超过 8 项）。这些是可选的功能区域——角色可以进入并在其中行走的空间（室内房间、广场、花园等）。仅在空间划分确实有助于行为、导航时才添加区域。每项包含：
   - `id`（snake_case，英文）
@@ -42,14 +42,14 @@
   - `placementHint`（2–4 个词的位置描述，如"左侧"、"南端"、"中央广场旁"）
   - `visualDescription`（≤15 字，描述该区域**从正上方俯视**时的外观特征，不要描述立面/高度/3D 特征）
   - `expectedObjects`（字符串数组）
-  - `interactions`（对象数组，包含 `id`、`name`、`description`、`duration`、`effects`，以及可选的 `requiresAnchor`）
+  - `interactions`（对象数组，包含 `id`、`name`、`description`、`durationMinutes`、`effects`，以及可选的 `requiresAnchor`）
 - `interactiveElements`（数组）：0–8 项（与 `regions` 合计不超过 8 项）。这些是 main_area 中的可交互元素——如摊位、喷泉、贩售机、神龛等，角色走到附近进行交互，但不进入内部。不要将可交互元素放在功能区内。每项包含：
   - `id`（snake_case，英文）
   - `name`（语言与用户输入一致）
   - `description`（一句话，语言与用户输入一致，概述该元素的功能）
   - `visualDescription`（≤15 字，描述该元素**从正上方俯视**时的外观特征）
   - `placementHint`（2–4 个词的位置描述）
-  - `interactions`（对象数组，包含 `id`、`name`、`description`、`duration`、`effects`，以及可选的 `requiresAnchor`）
+  - `interactions`（对象数组，包含 `id`、`name`、`description`、`durationMinutes`、`effects`，以及可选的 `requiresAnchor`）
 - `characters`（数组）：1–8 项。每项包含：`name`、`role`、`personality`、`appearance`（语言与用户输入一致，描述视觉外观：身份/职业关键词 + 发型、服装、配饰、颜色。**必须包含用户原文中的身份关键词**，如用户说"捕快"则 appearance 中必须出现"捕快"）、`appearanceHint`（一句话，供**其他角色看到 ta 时**使用的外貌弱提示；只写旁观者一眼能注意到的外观印象，不要直接泄露身份真相、现代概念、剧情设定或标签判断。例如不要写"现代网红"，应写"衣着样式和镇上人格格不入，打扮很新奇"）、`motivation`、`socialStyle`、`initialMemories`（字符串数组）。可选填 `anchor`（见下方"角色锚定"规则）。当且仅当用户明确提到了知名 IP 角色时，才可选填 `iconicCues` 和 `canonicalRefs`（详见下方"角色鲜活度"规则）。
   - `anchor`（可选对象）：`{ "type": "region" | "element", "targetId": "对应的 region 或 interactiveElement 的 id" }`。省略则为自由行走角色
   - `iconicCues`（可选对象）：`speechQuirks`（字符串数组——结构性说话习惯，不是口头禅；如"总以试探性反问回应别人，以此让对方先亮出底牌"）、`catchphrases`（数组，最多 2 条标志性台词）、`behavioralTics`（字符串数组——可反复出现的小动作/行为习惯）
@@ -86,7 +86,7 @@
       "id": "stroll_and_observe",
       "name": "闲逛观察",
       "description": "在整个场景里走动并观察周围的人与事。",
-      "duration": 2,
+      "durationMinutes": 30,
       "effects": [
         { "type": "character_need", "need": "curiosity", "delta": 8 }
       ]
@@ -108,7 +108,7 @@
           "id": "look_around",
           "name": "环顾四周",
           "description": "发生的事情。",
-          "duration": 2,
+          "durationMinutes": 30,
           "effects": [
             { "type": "character_need", "need": "curiosity", "delta": 10 }
           ]
@@ -129,7 +129,7 @@
           "name": "买小吃",
           "description": "从摊位购买一份小吃。",
           "requiresAnchor": true,
-          "duration": 1,
+          "durationMinutes": 15,
           "effects": [
             { "type": "character_need", "need": "curiosity", "delta": 5 }
           ]
@@ -139,7 +139,7 @@
           "name": "看看菜单",
           "description": "站在摊位前看看有什么好吃的。",
           "requiresAnchor": false,
-          "duration": 1,
+          "durationMinutes": 15,
           "effects": [
             { "type": "character_need", "need": "curiosity", "delta": 3 }
           ]
@@ -185,6 +185,7 @@
   - 其余世界设计字段可以留空、置为默认值或最小占位，但仍需保持合法 JSON
 - 每个世界至少包含 1 个有意义的 `worldAction`
 - `worldActions` 应该是真正的全局功能，不要只是 `idle` 或 `move` 的简单重写
+- 所有动作时长使用 `durationMinutes`，单位是世界内真实分钟数；不要输出 `duration`，不要按 tick 数估算
 - `regions` 是可选的；当场景本质上是一个连续的可玩空间时，应该省略
 - 在决定 `regions` 之前，先分析该场景是否真的需要空间划分
 - 如果场景是单房间地堡/单房间超市/紧凑的密封实验室，通常只需要 `worldActions` 而不需要 `regions`

@@ -63,7 +63,10 @@ export interface InteractionConfig {
   name: string;
   description?: string;
   availableWhenState: string[];
-  duration: number;
+  /** Real in-world duration in minutes. Preferred for new configs. */
+  durationMinutes?: number;
+  /** Legacy duration in tick units. Kept so older generated worlds still load. */
+  duration?: number;
   effects: Effect[];
   repeatable?: boolean;
   /** When true, this interaction requires dialogue with the anchored character instead of standalone object interaction */

@@ -7,6 +7,7 @@ import type { WorldManager, MainAreaZone } from "../core/world-manager.js";
 import type { CharacterManager } from "../core/character-manager.js";
 import { generateId } from "../utils/id-generator.js";
 import { absoluteTick } from "../utils/time-helpers.js";
+import { getDurationMinutes, getDurationTicks } from "../utils/duration.js";
 import { updateEmotion } from "../core/emotion-manager.js";
 
 const WORLD_ACTION_TARGET_PREFIX = "world_action:";
@@ -66,11 +67,13 @@ export function executeAction(
         break;
       }
 
+      const durationMinutes = getDurationMinutes(interaction);
+      const durationTicks = getDurationTicks(interaction, worldManager.getSceneConfig());
       characterManager.updateState(charId, {
         currentAction: decision.interactionId!,
         currentActionTarget: decision.targetId,
         actionStartTick: absNow,
-        actionEndTick: absNow + interaction.duration,
+        actionEndTick: absNow + durationTicks,
       });
 
       events.push({
@@ -86,7 +89,8 @@ export function executeAction(
           objectName: obj.name,
           interactionName: interaction.name,
           interactionId: decision.interactionId,
-          duration: interaction.duration,
+          duration: durationTicks,
+          durationMinutes,
           reason: decision.reason,
         },
         innerMonologue,
@@ -104,11 +108,13 @@ export function executeAction(
         break;
       }
 
+      const durationMinutes = getDurationMinutes(action);
+      const durationTicks = getDurationTicks(action, worldManager.getSceneConfig());
       characterManager.updateState(charId, {
         currentAction: action.id,
         currentActionTarget: `${WORLD_ACTION_TARGET_PREFIX}${action.id}`,
         actionStartTick: absNow,
-        actionEndTick: absNow + action.duration,
+        actionEndTick: absNow + durationTicks,
       });
 
       events.push({
@@ -123,7 +129,8 @@ export function executeAction(
           actionType: "world_action",
           interactionName: action.name,
           interactionId: action.id,
-          duration: action.duration,
+          duration: durationTicks,
+          durationMinutes,
           reason: decision.reason,
         },
         innerMonologue,

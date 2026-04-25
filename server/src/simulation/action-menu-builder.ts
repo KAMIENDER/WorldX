@@ -2,6 +2,7 @@ import type { Perception } from "../types/index.js";
 import type { WorldManager } from "../core/world-manager.js";
 import type { CharacterManager } from "../core/character-manager.js";
 import * as eventStore from "../store/event-store.js";
+import { getDurationMinutes } from "../utils/duration.js";
 
 const INTERACTION_COOLDOWN_TICKS = 4;
 
@@ -28,7 +29,7 @@ export function buildActionMenu(
   for (const action of worldActions) {
     if (!action.repeatable && recentInteractionIds.has(action.id)) continue;
 
-    const durationMin = action.duration * sceneConfig.tickDurationMinutes;
+    const durationMin = getDurationMinutes(action);
     const durationStr =
       durationMin >= 60
         ? `约${(durationMin / 60).toFixed(1).replace(/\.0$/, "")}小时`
@@ -83,7 +84,7 @@ export function buildActionMenu(
 
       if (isAnchored) continue;
 
-      const durationMin = inter.duration * sceneConfig.tickDurationMinutes;
+      const durationMin = getDurationMinutes(inter);
       const durationStr =
         durationMin >= 60
           ? `约${(durationMin / 60).toFixed(1).replace(/\.0$/, "")}小时`

@@ -3,6 +3,20 @@ import { join } from "path";
 import { normalizeWorldDesign } from "./world-design-utils.mjs";
 import { buildMainAreaPoints } from "./main-area-points.mjs";
 
+function durationMinutesFor(item, fallbackTicks = 2) {
+  const explicitMinutes = Number(item?.durationMinutes);
+  if (Number.isFinite(explicitMinutes) && explicitMinutes > 0) {
+    return Math.max(1, Math.round(explicitMinutes));
+  }
+
+  const legacyTicks = Number(item?.duration);
+  if (Number.isFinite(legacyTicks) && legacyTicks > 0) {
+    return Math.max(1, Math.round(legacyTicks)) * 15;
+  }
+
+  return fallbackTicks * 15;
+}
+
 export function generateConfigs(worldDesign, worldDir, options = {}) {
   const normalizedDesign = normalizeWorldDesign(worldDesign);
   const originalPrompt =
@@ -222,7 +236,7 @@ function buildLocations(tmjRegions, tmjObjects, worldDesign, tmj) {
               name: inter.name || inter.id,
               description: inter.description || "",
               availableWhenState: inter.availableWhenState || ["available"],
-              duration: inter.duration || 2,
+              durationMinutes: durationMinutesFor(inter),
               effects: inter.effects || [{ type: "character_need", target: "curiosity", value: 5 }],
               repeatable: inter.repeatable ?? true,
             })),
@@ -243,7 +257,7 @@ function buildLocations(tmjRegions, tmjObjects, worldDesign, tmj) {
                 name: inter.name,
                 description: inter.description || "",
                 availableWhenState: inter.availableWhenState || ["available"],
-                duration: inter.duration || 2,
+                durationMinutes: durationMinutesFor(inter),
                 effects: inter.effects || [],
                 repeatable: inter.repeatable ?? true,
                 ...(inter.requiresAnchor === true ? { requiresAnchor: true } : {}),
@@ -307,7 +321,7 @@ function buildLocations(tmjRegions, tmjObjects, worldDesign, tmj) {
             name: inter.name,
             description: inter.description || "",
             availableWhenState: inter.availableWhenState || ["available"],
-            duration: inter.duration || 2,
+            durationMinutes: durationMinutesFor(inter),
             effects: inter.effects || [],
             repeatable: inter.repeatable ?? true,
             ...(inter.requiresAnchor === true ? { requiresAnchor: true } : {}),
@@ -336,7 +350,7 @@ function buildElementObjects(designedElements, tmjObjects) {
       name: inter.name || inter.id,
       description: inter.description || "",
       availableWhenState: inter.availableWhenState || ["available"],
-      duration: inter.duration || 2,
+      durationMinutes: durationMinutesFor(inter),
       effects: inter.effects || [],
       repeatable: inter.repeatable ?? true,
       ...(inter.requiresAnchor === true ? { requiresAnchor: true } : {}),
@@ -359,7 +373,7 @@ function buildWorldActions(worldDesign) {
     name: action.name,
     description: action.description || "",
     availableWhenState: action.availableWhenState || ["available"],
-    duration: action.duration || 2,
+    durationMinutes: durationMinutesFor(action),
     effects: action.effects || [],
     repeatable: action.repeatable ?? true,
   }));

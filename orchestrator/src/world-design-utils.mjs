@@ -4,6 +4,17 @@ function clampDuration(value, fallback = 2) {
   return Math.max(1, Math.round(parsed));
 }
 
+function normalizeDurationMinutes(interaction, fallbackTicks = 2) {
+  const explicitMinutes = Number(interaction?.durationMinutes);
+  if (Number.isFinite(explicitMinutes) && explicitMinutes > 0) {
+    return Math.max(1, Math.round(explicitMinutes));
+  }
+
+  // Backward compatibility: older designs used `duration` as tick count,
+  // and the generation pipeline's base tick was 15 minutes.
+  return clampDuration(interaction?.duration, fallbackTicks) * 15;
+}
+
 function normalizeEffects(effects = [], fallbackNeed = "curiosity", fallbackDelta = 5) {
   if (!Array.isArray(effects) || effects.length === 0) {
     return [
@@ -41,7 +52,7 @@ function normalizeInteraction(interaction, fallbackId, fallbackName) {
       Array.isArray(interaction?.availableWhenState) && interaction.availableWhenState.length > 0
         ? interaction.availableWhenState
         : ["available"],
-    duration: clampDuration(interaction?.duration, 2),
+    durationMinutes: normalizeDurationMinutes(interaction, 2),
     effects: normalizeEffects(interaction?.effects),
     repeatable: interaction?.repeatable ?? true,
   };
