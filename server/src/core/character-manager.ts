@@ -392,6 +392,7 @@ function backfillNewNeedsState(profile: CharacterProfile, initialState: Characte
     hunger: initialState.hunger,
     stress: initialState.stress,
     money: initialState.money,
+    carryWeightKg: initialState.carryWeightKg,
     shortTermGoal: initialState.shortTermGoal,
   });
 }
@@ -482,7 +483,7 @@ function clampStat(value: number): number {
 
 function buildInitialNeedsState(profile: CharacterProfile): Pick<
   CharacterState,
-  "energy" | "hunger" | "stress" | "money" | "shortTermGoal"
+  "energy" | "hunger" | "stress" | "money" | "carryWeightKg" | "shortTermGoal"
 > {
   const age = inferInitialAge(profile);
   const text = `${profile.name} ${profile.role} ${profile.socialClass ?? ""} ${profile.backstory ?? ""} ${profile.tags.join(" ")}`;
@@ -499,8 +500,16 @@ function buildInitialNeedsState(profile: CharacterProfile): Pick<
         hashInt(`${profile.id}:stress`, 18),
     ),
     money: clampStat(money),
+    carryWeightKg: inferInitialCarryWeightKg(profile),
     shortTermGoal: profile.longTermGoals[0] ?? profile.coreMotivation ?? null,
   };
+}
+
+function inferInitialCarryWeightKg(profile: CharacterProfile): number {
+  if (typeof profile.carryWeightKg === "number" && Number.isFinite(profile.carryWeightKg)) {
+    return Math.max(0, Math.round(profile.carryWeightKg * 10) / 10);
+  }
+  return 0;
 }
 
 function buildInitialLifeState(profile: CharacterProfile): Pick<

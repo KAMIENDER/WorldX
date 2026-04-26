@@ -42,6 +42,7 @@ export interface CharacterInfo {
   hunger: number;
   stress: number;
   money: number;
+  carryWeightKg: number;
   shortTermGoal?: string | null;
   isAlive: boolean;
   location: string;
@@ -96,10 +97,11 @@ export interface CharacterDetail {
 	    bodyCondition: string;
 	    bodyConditionLabel?: string;
 	    energy: number;
-	    hunger: number;
-	    stress: number;
-	    money: number;
-	    shortTermGoal?: string | null;
+		    hunger: number;
+		    stress: number;
+		    money: number;
+		    carryWeightKg: number;
+		    shortTermGoal?: string | null;
 	    isAlive: boolean;
 	    deathDay: number | null;
 	    deathTick: number | null;

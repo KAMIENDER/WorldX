@@ -232,6 +232,8 @@ export class AppContext {
       this.characterManager,
       this.llmClient,
       this.promptBuilder,
+      this.eventBus,
+      () => this.timelineManager.getCurrentTimelineId(),
     );
   }
 }

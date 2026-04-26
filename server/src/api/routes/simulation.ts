@@ -5,6 +5,10 @@ import {
   getBatchTicksForOneCycle,
 } from "../../utils/time-helpers.js";
 import * as eventStore from "../../store/event-store.js";
+import {
+  getRecentTickRuns,
+  getTickTraceDetail,
+} from "../../store/tick-trace-store.js";
 import { enrichEventTime } from "./events.js";
 
 const router = Router();
@@ -14,30 +18,130 @@ type SimStatus = "idle" | "running" | "paused";
 let simStatus: SimStatus = "idle";
 let simProgress = { current: 0, total: 0 };
 let cancelRequested = false;
+let tickQueue: Promise<void> = Promise.resolve();
+let queuedTickCount = 0;
+const DEFAULT_PREFETCH_TICKS = 2;
+const MAX_CONFIGURED_PREFETCH_TICKS = 10;
+
+class TickQueueFullError extends Error {
+  constructor(readonly maxQueuedTicks: number) {
+    super(`Tick queue is full. maxQueuedTicks=${maxQueuedTicks}`);
+    this.name = "TickQueueFullError";
+  }
+}
+
+function getConfiguredPrefetchTicks(): number {
+  const raw = process.env.SIMULATION_PREFETCH_TICKS;
+  if (raw != null && raw.trim() !== "") {
+    return clampInt(Number(raw), 0, MAX_CONFIGURED_PREFETCH_TICKS, DEFAULT_PREFETCH_TICKS);
+  }
+
+  const legacyQueueLimit = Number(process.env.SIMULATION_MAX_TICK_QUEUE);
+  if (Number.isFinite(legacyQueueLimit) && legacyQueueLimit > 0) {
+    return clampInt(Math.floor(legacyQueueLimit) - 1, 0, MAX_CONFIGURED_PREFETCH_TICKS, DEFAULT_PREFETCH_TICKS);
+  }
+
+  return DEFAULT_PREFETCH_TICKS;
+}
+
+function getMaxQueuedTicks(): number {
+  const raw = Number(process.env.SIMULATION_MAX_TICK_QUEUE);
+  if (Number.isFinite(raw) && raw > 0) {
+    return Math.floor(raw);
+  }
+  return Math.max(1, getConfiguredPrefetchTicks() + 1);
+}
+
+function clampInt(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+async function runSingleTick(streamId?: string): Promise<{
+  ok: boolean;
+  gameTime: ReturnType<typeof buildWorldTimeInfo>;
+  eventCount: number;
+  events: ReturnType<typeof enrichEventTime>[];
+}> {
+  simStatus = "running";
+  const events = await appContext.simulationEngine.simulateTick({ streamId });
+  const gameTime = appContext.worldManager.getCurrentTime();
+  const worldTime = buildWorldTimeInfo(gameTime);
+  const persistedEvents = eventStore
+    .getEventsByIds(events.map((event) => event.id))
+    .map(enrichEventTime);
+
+  appContext.eventBus.emit("tick_events", { gameTime, events });
+  appContext.eventBus.emit("simulation_status", { status: "idle" });
+
+  simStatus = "idle";
+  return {
+    ok: true,
+    gameTime: worldTime,
+    eventCount: events.length,
+    events: persistedEvents,
+  };
+}
+
+function enqueueTick(streamId?: string): Promise<Awaited<ReturnType<typeof runSingleTick>>> {
+  const maxQueuedTicks = getMaxQueuedTicks();
+  if (queuedTickCount >= maxQueuedTicks) {
+    throw new TickQueueFullError(maxQueuedTicks);
+  }
+
+  queuedTickCount += 1;
+  const job = tickQueue
+    .catch(() => undefined)
+    .then(() => runSingleTick(streamId))
+    .finally(() => {
+      queuedTickCount = Math.max(0, queuedTickCount - 1);
+    });
+  tickQueue = job.then(() => undefined, () => undefined);
+  return job;
+}
+
+// GET /simulation/tick-traces — recent persisted timing traces
+router.get("/tick-traces", (req, res) => {
+  const rawLimit = Number(req.query.limit ?? 20);
+  const limit = Number.isFinite(rawLimit) ? rawLimit : 20;
+  res.json({ traces: getRecentTickRuns(limit) });
+});
+
+// GET /simulation/config — runtime playback/backpressure settings
+router.get("/config", (_req, res) => {
+  res.json({
+    prefetchTicks: getConfiguredPrefetchTicks(),
+    maxQueuedTicks: getMaxQueuedTicks(),
+  });
+});
+
+// GET /simulation/tick-traces/:id — timing phases + LLM calls for one tick
+router.get("/tick-traces/:id", (req, res) => {
+  const trace = getTickTraceDetail(req.params.id);
+  if (!trace) {
+    res.status(404).json({ error: "Tick trace not found" });
+    return;
+  }
+  res.json({ trace });
+});
 
 // POST /simulation/tick — advance 1 tick
-router.post("/tick", async (_req, res) => {
+router.post("/tick", async (req, res) => {
   try {
-    simStatus = "running";
-    const events = await appContext.simulationEngine.simulateTick();
-    const gameTime = appContext.worldManager.getCurrentTime();
-    const worldTime = buildWorldTimeInfo(gameTime);
-    const persistedEvents = eventStore
-      .getEventsByIds(events.map((event) => event.id))
-      .map(enrichEventTime);
-
-    appContext.eventBus.emit("tick_events", { gameTime, events });
-    appContext.eventBus.emit("simulation_status", { status: "idle" });
-
-    simStatus = "idle";
-    res.json({
-      ok: true,
-      gameTime: worldTime,
-      eventCount: events.length,
-      events: persistedEvents,
-    });
+    const streamId =
+      typeof req.body?.streamId === "string" && req.body.streamId.trim()
+        ? req.body.streamId.trim().slice(0, 80)
+        : undefined;
+    res.json(await enqueueTick(streamId));
   } catch (err) {
     simStatus = "idle";
+    if (err instanceof TickQueueFullError) {
+      res.status(429).json({
+        error: err.message,
+        maxQueuedTicks: err.maxQueuedTicks,
+      });
+      return;
+    }
     res.status(500).json({ error: String(err) });
   }
 });

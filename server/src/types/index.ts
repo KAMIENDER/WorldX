@@ -3,6 +3,7 @@ export type {
   SceneConfig,
   MultiDayConfig,
   WorldSizeConfig,
+  MovementConfig,
   LocationConfig,
   MainAreaPointConfig,
   ObjectConfig,

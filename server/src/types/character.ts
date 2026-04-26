@@ -17,6 +17,8 @@ export interface CharacterProfile {
   genderLabel?: string;
   socialClass?: string;
   occupation?: string;
+  baseWalkSpeedMetersPerMinute?: number;
+  carryWeightKg?: number;
   homeLocation?: string;
   workLocation?: string;
   family: string[];
@@ -99,6 +101,7 @@ export interface CharacterState {
   hunger: number;
   stress: number;
   money: number;
+  carryWeightKg: number;
   shortTermGoal: string | null;
 
   ageYears: number;

@@ -8,6 +8,7 @@ import type {
   InteractionConfig,
   WorldActionConfig,
   WorldSizeConfig,
+  MovementConfig,
   GameTime,
   DialogueSession,
   SceneConfig,
@@ -27,6 +28,17 @@ const MIN_PREFERRED_MAIN_AREA_COMPONENT_RATIO = 0.5;
 const MAIN_AREA_SPAWN_EDGE_PADDING_TILE_MULTIPLIER = 3;
 const MAIN_AREA_SPAWN_EDGE_PADDING_RATIO = 0.03;
 const MAIN_AREA_SPAWN_INTERIOR_POOL_RATIO = 0.5;
+const DEFAULT_METERS_PER_TILE = 1;
+const DEFAULT_WALK_SPEED_METERS_PER_MINUTE = 65;
+const DEFAULT_MIN_MOVE_MINUTES = 1;
+
+export interface MainAreaPathDistance {
+  pointIds: string[];
+  pixelDistance: number;
+  tileDistance: number;
+  meters: number;
+  usedFallbackStraightLine: boolean;
+}
 
 export interface TickAdvanceResult {
   previousTime: GameTime;
@@ -44,6 +56,7 @@ export class WorldManager {
   private mainAreaZoneMap: Map<string, MainAreaZone> = new Map();
   private worldActions: WorldActionConfig[] = [];
   private worldSize: WorldSizeConfig | null = null;
+  private movementConfig: MovementConfig = normalizeMovementConfig();
   private sceneConfig!: SceneConfig;
   private worldName = "unknown";
   private worldDescription = "";
@@ -67,6 +80,7 @@ export class WorldManager {
     this.preferredMainAreaPointIds = getLargestMainAreaPointComponent(this.mainAreaPoints);
     this.mainAreaZoneMap = computeMainAreaZones(this.mainAreaPoints);
     this.worldSize = normalizeWorldSize(config.worldSize) ?? inferWorldSizeFromWorldDir();
+    this.movementConfig = normalizeMovementConfig(config.movement);
     this.worldActions = config.worldActions ?? [];
     this.worldName = config.worldName ?? "unknown";
     this.worldDescription = config.worldDescription ?? "";
@@ -188,6 +202,35 @@ export class WorldManager {
 
   getWorldSize(): WorldSizeConfig | null {
     return this.worldSize;
+  }
+
+  getMovementConfig(): MovementConfig {
+    return this.movementConfig;
+  }
+
+  getMetersPerTile(): number {
+    const metersPerTile = this.worldSize?.metersPerTile;
+    return Number.isFinite(metersPerTile) && metersPerTile! > 0
+      ? metersPerTile!
+      : DEFAULT_METERS_PER_TILE;
+  }
+
+  getMainAreaPathDistance(
+    fromPointId: string | null | undefined,
+    toPointId: string | null | undefined,
+  ): MainAreaPathDistance | null {
+    if (!fromPointId || !toPointId) return null;
+    const result = findShortestMainAreaPath(this.mainAreaPoints, fromPointId, toPointId);
+    if (!result) return null;
+    const tileSize = this.worldSize?.tileSize && Number.isFinite(this.worldSize.tileSize)
+      ? this.worldSize.tileSize
+      : 1;
+    const tileDistance = result.pixelDistance / tileSize;
+    return {
+      ...result,
+      tileDistance,
+      meters: tileDistance * this.getMetersPerTile(),
+    };
   }
 
   getMainAreaDialogueDistanceThreshold(): number | null {
@@ -682,12 +725,39 @@ function mergeSceneConfigOverride(base: SceneConfig, override: Partial<SceneConf
 function normalizeWorldSize(size: WorldSizeConfig | undefined): WorldSizeConfig | null {
   if (!size) return null;
   if (!Number.isFinite(size.width) || !Number.isFinite(size.height)) return null;
+  const metersPerTile =
+    Number.isFinite(size.metersPerTile) && size.metersPerTile! > 0
+      ? size.metersPerTile
+      : undefined;
   return {
     width: size.width,
     height: size.height,
     tileSize: Number.isFinite(size.tileSize) ? size.tileSize : undefined,
     gridWidth: Number.isFinite(size.gridWidth) ? size.gridWidth : undefined,
     gridHeight: Number.isFinite(size.gridHeight) ? size.gridHeight : undefined,
+    metersPerTile,
+  };
+}
+
+function normalizeMovementConfig(config?: Partial<MovementConfig>): MovementConfig {
+  const defaultWalkSpeedMetersPerMinute =
+    Number.isFinite(config?.defaultWalkSpeedMetersPerMinute) &&
+    config!.defaultWalkSpeedMetersPerMinute! > 0
+      ? config!.defaultWalkSpeedMetersPerMinute!
+      : DEFAULT_WALK_SPEED_METERS_PER_MINUTE;
+  const minMoveMinutes =
+    Number.isFinite(config?.minMoveMinutes) && config!.minMoveMinutes! > 0
+      ? config!.minMoveMinutes!
+      : DEFAULT_MIN_MOVE_MINUTES;
+  const maxMoveTicks =
+    Number.isFinite(config?.maxMoveTicks) && config!.maxMoveTicks! > 0
+      ? Math.max(1, Math.floor(config!.maxMoveTicks!))
+      : null;
+
+  return {
+    defaultWalkSpeedMetersPerMinute,
+    minMoveMinutes,
+    maxMoveTicks,
   };
 }
 
@@ -738,6 +808,92 @@ function hashString(value: string): number {
 
 function distanceBetweenPoints(a: MainAreaPointConfig, b: MainAreaPointConfig): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function findShortestMainAreaPath(
+  points: MainAreaPointConfig[],
+  fromPointId: string,
+  toPointId: string,
+): Pick<MainAreaPathDistance, "pointIds" | "pixelDistance" | "usedFallbackStraightLine"> | null {
+  const pointMap = new Map(points.map((point) => [point.id, point]));
+  const from = pointMap.get(fromPointId);
+  const to = pointMap.get(toPointId);
+  if (!from || !to) return null;
+  if (from.id === to.id) {
+    return { pointIds: [from.id], pixelDistance: 0, usedFallbackStraightLine: false };
+  }
+
+  const neighborMap = buildUndirectedMainAreaNeighborMap(points);
+  const distances = new Map<string, number>();
+  const previous = new Map<string, string>();
+  const unvisited = new Set(pointMap.keys());
+  distances.set(from.id, 0);
+
+  while (unvisited.size > 0) {
+    let currentId: string | null = null;
+    let currentDistance = Infinity;
+    for (const id of unvisited) {
+      const distance = distances.get(id) ?? Infinity;
+      if (distance < currentDistance) {
+        currentDistance = distance;
+        currentId = id;
+      }
+    }
+
+    if (!currentId || currentDistance === Infinity) break;
+    if (currentId === to.id) break;
+    unvisited.delete(currentId);
+
+    const current = pointMap.get(currentId);
+    if (!current) continue;
+    for (const neighborId of neighborMap.get(currentId) ?? []) {
+      if (!unvisited.has(neighborId)) continue;
+      const neighbor = pointMap.get(neighborId);
+      if (!neighbor) continue;
+      const nextDistance = currentDistance + distanceBetweenPoints(current, neighbor);
+      if (nextDistance < (distances.get(neighborId) ?? Infinity)) {
+        distances.set(neighborId, nextDistance);
+        previous.set(neighborId, currentId);
+      }
+    }
+  }
+
+  const bestDistance = distances.get(to.id);
+  if (Number.isFinite(bestDistance)) {
+    const path: string[] = [];
+    let cursor: string | undefined = to.id;
+    while (cursor) {
+      path.unshift(cursor);
+      if (cursor === from.id) break;
+      cursor = previous.get(cursor);
+    }
+    return {
+      pointIds: path[0] === from.id ? path : [from.id, to.id],
+      pixelDistance: bestDistance!,
+      usedFallbackStraightLine: false,
+    };
+  }
+
+  return {
+    pointIds: [from.id, to.id],
+    pixelDistance: distanceBetweenPoints(from, to),
+    usedFallbackStraightLine: true,
+  };
+}
+
+function buildUndirectedMainAreaNeighborMap(points: MainAreaPointConfig[]): Map<string, Set<string>> {
+  const pointIds = new Set(points.map((point) => point.id));
+  const map = new Map<string, Set<string>>();
+  for (const point of points) {
+    if (!map.has(point.id)) map.set(point.id, new Set());
+    for (const neighborId of point.adjacentPointIds) {
+      if (!pointIds.has(neighborId)) continue;
+      map.get(point.id)!.add(neighborId);
+      if (!map.has(neighborId)) map.set(neighborId, new Set());
+      map.get(neighborId)!.add(point.id);
+    }
+  }
+  return map;
 }
 
 function getLargestMainAreaPointComponent(points: MainAreaPointConfig[]): Set<string> | null {

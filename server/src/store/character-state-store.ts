@@ -35,6 +35,7 @@ function rowToState(row: any): CharacterState {
     hunger: row.hunger ?? 20,
     stress: row.stress ?? 20,
     money: row.money ?? 0,
+    carryWeightKg: row.carry_weight_kg ?? 0,
     shortTermGoal: row.short_term_goal ?? null,
     ageYears: row.age_years ?? 30,
     ageDays: row.age_days ?? 0,
@@ -55,10 +56,10 @@ export function initCharacterState(state: CharacterState): void {
 	      `INSERT OR IGNORE INTO character_states
 	       (character_id, location, main_area_point_id, current_action, current_action_target,
 	        action_start_tick, action_end_tick, emotion_valence, emotion_arousal,
-	        curiosity, energy, hunger, stress, money, short_term_goal,
+	        curiosity, energy, hunger, stress, money, carry_weight_kg, short_term_goal,
 	        age_years, age_days, life_stage, health, body_condition, is_alive,
 	        death_day, death_tick, death_cause, daily_plan)
-	       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	    )
 	    .run(
 	      state.characterId,
@@ -73,9 +74,10 @@ export function initCharacterState(state: CharacterState): void {
 	      state.curiosity,
 	      state.energy,
 	      state.hunger,
-	      state.stress,
-	      state.money,
-	      state.shortTermGoal,
+      state.stress,
+      state.money,
+      state.carryWeightKg,
+      state.shortTermGoal,
 	      state.ageYears,
 	      state.ageDays,
 	      state.lifeStage,
@@ -156,6 +158,10 @@ export function updateCharacterState(id: string, patch: Partial<CharacterState>)
   if (patch.money !== undefined) {
     sets.push("money = ?");
     params.push(patch.money);
+  }
+  if (patch.carryWeightKg !== undefined) {
+    sets.push("carry_weight_kg = ?");
+    params.push(patch.carryWeightKg);
   }
   if (patch.shortTermGoal !== undefined) {
     sets.push("short_term_goal = ?");

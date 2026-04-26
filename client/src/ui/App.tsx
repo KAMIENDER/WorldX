@@ -1,6 +1,6 @@
 import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useState, useEffect, useCallback, Component } from "react";
+import { useState, useEffect, useCallback, useRef, Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
 import { createPortal } from "react-dom";
 import Phaser from "phaser";
@@ -17,7 +17,7 @@ import { CreateWorldPage } from "./pages/CreateWorldPage";
 import { CreateWorldBackground } from "./pages/CreateWorldBackground";
 import type { SimulationEvent, DialogueEventData, WorldTimeInfo } from "../types/api";
 import { apiClient } from "./services/api-client";
-import type { GeneratedWorldSummary, WorldInfo } from "./services/api-client";
+import type { GeneratedWorldSummary, TickProgressInfo, WorldInfo } from "./services/api-client";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +30,29 @@ const queryClient = new QueryClient({
 });
 
 const DEFAULT_TOP_BAR_HEIGHT = 76;
+
+type PlaybackProgressInfo = {
+  label: string;
+  at: number;
+  eventId?: string;
+  durationMs?: number;
+};
+
+function prependUniqueEvents(
+  prev: SimulationEvent[],
+  incoming: SimulationEvent[],
+  limit = 50,
+): SimulationEvent[] {
+  const seen = new Set<string>();
+  const next: SimulationEvent[] = [];
+  for (const event of [...incoming, ...prev]) {
+    if (event.id && seen.has(event.id)) continue;
+    if (event.id) seen.add(event.id);
+    next.push(event);
+    if (next.length >= limit) break;
+  }
+  return next;
+}
 
 class OverlayErrorBoundary extends Component<
   { children: ReactNode; onError: () => void },
@@ -97,6 +120,9 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
   const [isReplaying, setIsReplaying] = useState(false);
   const [replayProgress, setReplayProgress] = useState<{ current: number; total: number } | null>(null);
   const [dialogueEvents, setDialogueEvents] = useState<SimulationEvent[]>([]);
+  const [tickProgress, setTickProgress] = useState<TickProgressInfo[]>([]);
+  const [playbackProgress, setPlaybackProgress] = useState<PlaybackProgressInfo | null>(null);
+  const [runtimeStateRefreshNonce, setRuntimeStateRefreshNonce] = useState(0);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [transitionPhase, setTransitionPhase] = useState<"hidden" | "ending" | "starting" | "fade-out">("hidden");
   const [lastKnownDay, setLastKnownDay] = useState(0);
@@ -109,6 +135,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
   const [viewportWidth, setViewportWidth] = useState(
     () => (typeof window === "undefined" ? 1200 : window.innerWidth),
   );
+  const playbackProgressClearTimerRef = useRef<number | null>(null);
   const isOverlayRoute =
     location.pathname === "/timeline";
   const hideMainChrome = isOverlayRoute || isCreateRoute;
@@ -194,6 +221,54 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let closed = false;
+
+    const connect = () => {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message?.type !== "tick_progress") return;
+          const progress = message.data as TickProgressInfo;
+          setTickProgress((prev) => [progress, ...prev].slice(0, 6));
+          if (progress.phase === "world_state_update_done") {
+            setRuntimeStateRefreshNonce((prev) => prev + 1);
+            if (progress.events?.length) {
+              setEvents((prev) => prependUniqueEvents(prev, progress.events ?? []));
+            }
+          }
+          eventBus.emit("tick_progress", progress);
+          if (progress.phase === "tick_persisted" || progress.phase === "world_state_update_done") {
+            window.setTimeout(() => {
+              setTickProgress((prev) =>
+                prev[0]?.at === progress.at ? [] : prev,
+              );
+            }, 3500);
+          }
+        } catch (error) {
+          console.warn("[App] Failed to handle websocket message:", error);
+        }
+      };
+      socket.onclose = () => {
+        if (closed) return;
+        reconnectTimer = window.setTimeout(connect, 1500);
+      };
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [eventBus]);
 
   useEffect(() => {
     if (worldsList === null) return;
@@ -298,7 +373,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
     const onTimeUpdate = (time: WorldTimeInfo) => setGameTime(time);
     const onCharClick = (id: string) => setSelectedCharId(id);
     const onSimEvent = (event: SimulationEvent) => {
-      setEvents((prev) => [event, ...prev].slice(0, 50));
+      setEvents((prev) => prependUniqueEvents(prev, [event]));
     };
     const onSimStatus = (payload: { status?: "idle" | "running" | "paused" | "error" }) => {
       if (payload.status) setSimStatus(payload.status);
@@ -328,6 +403,16 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
     const onReplayFinished = () => {
       setIsReplaying(false);
     };
+    const onPlaybackProgress = (payload: PlaybackProgressInfo) => {
+      setPlaybackProgress(payload);
+      if (playbackProgressClearTimerRef.current != null) {
+        window.clearTimeout(playbackProgressClearTimerRef.current);
+      }
+      playbackProgressClearTimerRef.current = window.setTimeout(() => {
+        setPlaybackProgress((current) => current?.at === payload.at ? null : current);
+        playbackProgressClearTimerRef.current = null;
+      }, Math.max(1200, payload.durationMs ?? 3000));
+    };
 
     eventBus.on("time_update", onTimeUpdate);
     eventBus.on("character_clicked", onCharClick);
@@ -338,8 +423,13 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
     eventBus.on("set_replay_mode", onReplayMode);
     eventBus.on("replay_progress", onReplayProgress);
     eventBus.on("replay_finished", onReplayFinished);
+    eventBus.on("playback_progress", onPlaybackProgress);
 
     return () => {
+      if (playbackProgressClearTimerRef.current != null) {
+        window.clearTimeout(playbackProgressClearTimerRef.current);
+        playbackProgressClearTimerRef.current = null;
+      }
       eventBus.off("time_update", onTimeUpdate);
       eventBus.off("character_clicked", onCharClick);
       eventBus.off("sim_event", onSimEvent);
@@ -349,6 +439,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
       eventBus.off("set_replay_mode", onReplayMode);
       eventBus.off("replay_progress", onReplayProgress);
       eventBus.off("replay_finished", onReplayFinished);
+      eventBus.off("playback_progress", onPlaybackProgress);
     };
   }, [eventBus]);
 
@@ -449,6 +540,8 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
             isResetting={isResetting}
             isReplaying={isReplaying}
             replayProgress={replayProgress}
+            tickProgress={tickProgress}
+            playbackProgress={playbackProgress}
             onHeightChange={setTopBarHeight}
           />
           {worldInfo && (worldInfo.originalPrompt?.trim() || worldInfo.worldDescription?.trim()) && (
@@ -487,7 +580,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
           <RuntimeStatePanel
             visible={isDevMode}
             rightOffset={statePanelRightOffset}
-            refreshKey={`${gameTime.day}:${gameTime.tick}:${events[0]?.id ?? ""}:${worldInfo?.currentTimelineId ?? ""}`}
+            refreshKey={`${gameTime.day}:${gameTime.tick}:${runtimeStateRefreshNonce}:${events[0]?.id ?? ""}:${worldInfo?.currentTimelineId ?? ""}`}
           />
           <SceneTransition
             day={gameTime.day + (transitionPhase === "ending" ? 1 : 0)}

@@ -63,6 +63,13 @@ export function generateConfigs(worldDesign, worldDir, options = {}) {
     tileSize: tmj.tilewidth,
     gridWidth: tmj.width,
     gridHeight: tmj.height,
+    metersPerTile: normalizedDesign.movement?.metersPerTile ?? 1,
+  };
+  const movement = {
+    defaultWalkSpeedMetersPerMinute:
+      normalizedDesign.movement?.defaultWalkSpeedMetersPerMinute ?? 65,
+    minMoveMinutes: normalizedDesign.movement?.minMoveMinutes ?? 1,
+    maxMoveTicks: normalizedDesign.movement?.maxMoveTicks ?? null,
   };
 
   const worldConfig = {
@@ -84,6 +91,7 @@ export function generateConfigs(worldDesign, worldDir, options = {}) {
     locations,
     mainAreaPoints,
     worldSize,
+    movement,
     metadata: {
       worldName: normalizedDesign.worldName,
       worldDescription: normalizedDesign.worldDescription,

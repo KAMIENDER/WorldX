@@ -37,6 +37,8 @@ export class WorldScene extends Phaser.Scene {
   private entityLayer!: Phaser.GameObjects.Container;
   private dialoguePlaybackLanes: Map<string, DialoguePlaybackLane> = new Map();
   private dialogueEventChain: Promise<void> = Promise.resolve();
+  private actorEventChains: Map<string, Promise<void>> = new Map();
+  private activeDialogueLaneKey: string | null = null;
   private mapPixelWidth = 8192;
   private mapPixelHeight = 4608;
   private walkableOverlay: Phaser.GameObjects.Graphics | null = null;
@@ -252,9 +254,10 @@ export class WorldScene extends Phaser.Scene {
 	        bodyCondition: "healthy",
 	        energy: 80,
 	        hunger: 20,
-	        stress: 20,
-	        money: 0,
-	        isAlive: true,
+		        stress: 20,
+		        money: 0,
+		        carryWeightKg: 0,
+		        isAlive: true,
 	        location: char.location,
         mainAreaPointId: char.mainAreaPointId,
         emotion: "neutral",
@@ -384,6 +387,8 @@ export class WorldScene extends Phaser.Scene {
       lane.timer = null;
     }
     this.dialoguePlaybackLanes.clear();
+    this.actorEventChains.clear();
+    this.activeDialogueLaneKey = null;
     for (const sprite of this.characterSprites.values()) {
       sprite.stopMoving();
       sprite.clearTransientUi();
@@ -392,9 +397,34 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private handleSimEvent(event: SimulationEvent) {
+    const actorIds = this.getEventActorIds(event);
+    const previousActorWork = actorIds
+      .map((actorId) => this.actorEventChains.get(actorId))
+      .filter((promise): promise is Promise<void> => !!promise);
+    const eventWork = Promise.all(previousActorWork)
+      .then(() => this.processSimEvent(event))
+      .catch((error) => {
+        console.warn("[WorldScene] Failed to process simulation event:", error);
+      })
+      .finally(() => {
+        for (const actorId of actorIds) {
+          if (this.actorEventChains.get(actorId) === eventWork) {
+            this.actorEventChains.delete(actorId);
+          }
+        }
+      });
+
+    for (const actorId of actorIds) {
+      this.actorEventChains.set(actorId, eventWork);
+    }
+    void this.trackPlaybackAsync(eventWork);
+  }
+
+  private async processSimEvent(event: SimulationEvent): Promise<void> {
     switch (event.type) {
       case "movement": {
         const destination = event.data?.to ?? event.data?.toLocation ?? event.location;
+        let movement: Promise<void> | null = null;
         if (event.actorId && destination) {
           const sprite = this.characterSprites.get(event.actorId);
           sprite?.setCurrentAction(null);
@@ -402,20 +432,22 @@ export class WorldScene extends Phaser.Scene {
           sprite?.setActionLabel(null);
           const pointId =
             typeof event.data?.toPointId === "string" ? event.data.toPointId : null;
-          void this.trackPlaybackAsync(
-            this.characterMovement.moveToLocation(event.actorId, destination, {
-              force: true,
-              mainAreaPointId: pointId,
-            }),
-          );
+          movement = this.characterMovement.moveToLocation(event.actorId, destination, {
+            force: true,
+            mainAreaPointId: pointId,
+          });
           this.maybeShowActionMonologue(event);
         }
+        this.emitEventPlaybackProgress(event);
+        this.eventBus.emit("sim_event", event);
+        await movement;
         break;
       }
 
       case "action_start": {
         const sprite = this.characterSprites.get(event.actorId!);
         const actionId = event.data?.action ?? event.data?.interactionId ?? event.data?.actionType ?? null;
+        let movement: Promise<void> | null = null;
         if (sprite) {
           sprite.setCurrentAction(actionId);
           sprite.setActionIcon(actionToEmoji(actionId));
@@ -428,11 +460,12 @@ export class WorldScene extends Phaser.Scene {
         }
         const objectId = event.data?.objectId ?? event.targetId;
         if (objectId && event.actorId && event.data?.actionType === "interact_object") {
-          void this.trackPlaybackAsync(
-            this.characterMovement.moveToObject(event.actorId, objectId),
-          );
+          movement = this.characterMovement.moveToObject(event.actorId, objectId);
         }
         this.maybeShowActionMonologue(event);
+        this.emitEventPlaybackProgress(event);
+        this.eventBus.emit("sim_event", event);
+        await movement;
         break;
       }
 
@@ -443,25 +476,47 @@ export class WorldScene extends Phaser.Scene {
           sprite.setActionIcon("");
           sprite.setActionLabel(null);
         }
+        this.eventBus.emit("sim_event", event);
         break;
       }
 
       case "dialogue":
-        this.dialogueEventChain = this.trackPlaybackAsync(
+        this.dialogueEventChain =
           this.dialogueEventChain
             .then(() => this.handleDialogue(event))
             .catch((error) => {
               console.warn("[WorldScene] Failed to handle dialogue event:", error);
-            }),
-        );
+            });
+        await this.dialogueEventChain;
+        this.eventBus.emit("sim_event", event);
         break;
 
       case "event_triggered":
         this.eventBus.emit("global_event", event);
+        this.eventBus.emit("sim_event", event);
+        break;
+
+      default:
+        this.eventBus.emit("sim_event", event);
         break;
     }
+  }
 
-    this.eventBus.emit("sim_event", event);
+  private getEventActorIds(event: SimulationEvent): string[] {
+    const actorIds = new Set<string>();
+    if (event.actorId) actorIds.add(event.actorId);
+    if (event.targetId && this.characterSprites.has(event.targetId)) {
+      actorIds.add(event.targetId);
+    }
+    const participants = Array.isArray(event.data?.participants)
+      ? event.data.participants
+      : [];
+    for (const participantId of participants) {
+      if (typeof participantId === "string") {
+        actorIds.add(participantId);
+      }
+    }
+    return [...actorIds];
   }
 
   private async handleDialogue(event: SimulationEvent) {
@@ -553,9 +608,16 @@ export class WorldScene extends Phaser.Scene {
       this.scheduleTickPlaybackCompletionCheck();
       return;
     }
+    if (this.activeDialogueLaneKey && this.activeDialogueLaneKey !== laneKey) {
+      return;
+    }
     if (lane.timer || lane.queue.length === 0) {
       if (!lane.timer && lane.queue.length === 0) {
         this.dialoguePlaybackLanes.delete(laneKey);
+        if (this.activeDialogueLaneKey === laneKey) {
+          this.activeDialogueLaneKey = null;
+          this.pumpDialoguePlayback();
+        }
         this.scheduleTickPlaybackCompletionCheck();
       }
       return;
@@ -564,9 +626,14 @@ export class WorldScene extends Phaser.Scene {
     const nextTurn = lane.queue.shift();
     if (!nextTurn) {
       this.dialoguePlaybackLanes.delete(laneKey);
+      if (this.activeDialogueLaneKey === laneKey) {
+        this.activeDialogueLaneKey = null;
+        this.pumpDialoguePlayback();
+      }
       this.scheduleTickPlaybackCompletionCheck();
       return;
     }
+    this.activeDialogueLaneKey = laneKey;
 
     const bubbleDuration = FRONTEND_DIALOGUE_BUBBLE_MS;
     const playbackDuration =
@@ -584,6 +651,9 @@ export class WorldScene extends Phaser.Scene {
 
     const sprite = this.characterSprites.get(nextTurn.speaker);
     if (sprite) {
+      this.emitPlaybackProgress(`${sprite.characterName}：${this.truncatePlaybackText(nextTurn.content)}`, {
+        durationMs: playbackDuration,
+      });
       sprite.showBubble(nextTurn.content, bubbleDuration, {}, nextTurn.innerMonologue);
     }
 
@@ -593,10 +663,27 @@ export class WorldScene extends Phaser.Scene {
         lane.timer = null;
         if (lane.queue.length === 0) {
           this.dialoguePlaybackLanes.delete(laneKey);
+          if (this.activeDialogueLaneKey === laneKey) {
+            this.activeDialogueLaneKey = null;
+          }
+          this.pumpDialoguePlayback();
+          this.scheduleTickPlaybackCompletionCheck();
+          return;
         }
         this.playNextDialogueTurn(laneKey);
       },
     );
+  }
+
+  private pumpDialoguePlayback(): void {
+    if (this.activeDialogueLaneKey) return;
+    for (const [laneKey, lane] of this.dialoguePlaybackLanes) {
+      if (!lane.timer && lane.queue.length > 0) {
+        this.playNextDialogueTurn(laneKey);
+        return;
+      }
+    }
+    this.scheduleTickPlaybackCompletionCheck();
   }
 
   private maybeShowActionMonologue(event: SimulationEvent): void {
@@ -605,6 +692,60 @@ export class WorldScene extends Phaser.Scene {
     const sprite = this.characterSprites.get(event.actorId);
     if (!sprite) return;
     sprite.showMonologue(monologue);
+  }
+
+  private emitEventPlaybackProgress(event: SimulationEvent): void {
+    const actorName = event.actorId
+      ? this.characterSprites.get(event.actorId)?.characterName
+      : null;
+    if (!actorName) return;
+
+    if (event.type === "movement") {
+      const destination =
+        typeof event.data?.to === "string"
+          ? event.data.to
+          : typeof event.data?.toLocation === "string"
+            ? event.data.toLocation
+            : event.location;
+      this.emitPlaybackProgress(`${actorName} 移动到 ${destination}`, {
+        eventId: event.id,
+        durationMs: 1800,
+      });
+      return;
+    }
+
+    if (event.type === "action_start") {
+      const actionName =
+        typeof event.data?.actionName === "string"
+          ? event.data.actionName
+          : typeof event.data?.interactionName === "string"
+            ? event.data.interactionName
+            : typeof event.data?.action === "string"
+              ? event.data.action
+              : "行动";
+      this.emitPlaybackProgress(`${actorName} ${actionName}`, {
+        eventId: event.id,
+        durationMs: 2200,
+      });
+    }
+  }
+
+  private emitPlaybackProgress(
+    label: string,
+    options: { eventId?: string; durationMs?: number } = {},
+  ): void {
+    this.eventBus.emit("playback_progress", {
+      label,
+      eventId: options.eventId,
+      durationMs: options.durationMs ?? 3000,
+      at: Date.now(),
+    });
+  }
+
+  private truncatePlaybackText(text: string, maxLength = 42): string {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, maxLength)}...`;
   }
 
   private trackPlaybackAsync<T>(promise: Promise<T>): Promise<T> {
@@ -637,6 +778,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private hasPendingDialoguePlayback(): boolean {
+    if (this.activeDialogueLaneKey) return true;
     for (const lane of this.dialoguePlaybackLanes.values()) {
       if (lane.timer || lane.queue.length > 0) {
         return true;

@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { apiClient } from "../ui/services/api-client";
+import { apiClient, type TickProgressInfo } from "../ui/services/api-client";
 import type {
   GameTime,
   SimulationEvent,
@@ -13,9 +13,35 @@ type TickResponse = {
   gameTime: WorldTimeInfo;
   eventCount: number;
   events: SimulationEvent[];
+  streamId: string;
 };
 
 export type PlaybackMode = "live" | "replay";
+
+const DEFAULT_LIVE_TICK_ESTIMATE_MS = 4000;
+const MIN_LIVE_TICK_ESTIMATE_MS = 1200;
+const MAX_LIVE_TICK_ESTIMATE_MS = 20000;
+const RECENT_TICK_DURATION_SAMPLE_SIZE = 3;
+const STREAM_EVENT_SPACING_MS = 420;
+const DEFAULT_LIVE_PREFETCH_TICKS = 2;
+const MAX_LIVE_PREFETCH_TICKS = 10;
+
+type TickStreamState = {
+  streamId: string;
+  bufferedEvents: SimulationEvent[];
+  knownEventIds: Set<string>;
+  emittedEventIds: Set<string>;
+  started: boolean;
+  draining: boolean;
+  complete: boolean;
+};
+
+type LiveTickSlot = {
+  streamId: string;
+  promise: Promise<TickResponse>;
+  result?: TickResponse;
+  error?: unknown;
+};
 
 export class PlaybackController extends Phaser.Events.EventEmitter {
   private currentTime: WorldTimeInfo = {
@@ -29,8 +55,11 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
   private nextTickDueAt = 0;
   private tickStartedAt = 0;
   private playbackInProgress = false;
-  private requestInFlight = false;
-  private prefetchedTick: TickResponse | null = null;
+  private maxLivePrefetchTicks = DEFAULT_LIVE_PREFETCH_TICKS;
+  private liveTickSlots: LiveTickSlot[] = [];
+  private recentTickRequestDurations: number[] = [];
+  private tickStreams: Map<string, TickStreamState> = new Map();
+  private activePlaybackStreamId: string | null = null;
   private cycleTicks = 48;
   private curtainDropped = false;
 
@@ -43,10 +72,24 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
 
   constructor(private globalEventBus: Phaser.Events.EventEmitter) {
     super();
+    this.globalEventBus.on("tick_progress", this.handleTickProgress);
   }
 
   async initialize(): Promise<void> {
-    const worldTime = await apiClient.getWorldTime();
+    const [worldTime, simulationConfig] = await Promise.all([
+      apiClient.getWorldTime(),
+      apiClient.getSimulationConfig().catch((error) => {
+        console.warn("[PlaybackController] Failed to load simulation config:", error);
+        return null;
+      }),
+    ]);
+    if (simulationConfig) {
+      this.maxLivePrefetchTicks = Phaser.Math.Clamp(
+        Math.floor(simulationConfig.prefetchTicks),
+        0,
+        MAX_LIVE_PREFETCH_TICKS,
+      );
+    }
     this.currentTime = worldTime;
     this.globalEventBus.emit("time_update", { ...this.currentTime });
     this.globalEventBus.emit("simulation_status", { status: "idle" });
@@ -71,7 +114,7 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
     if (this.mode === "replay") return;
 
     this.autoPlay = false;
-    this.prefetchedTick = null;
+    this.liveTickSlots = [];
 
     try {
       const { frames } = await apiClient.getTimelineEvents(timelineId);
@@ -138,7 +181,6 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
 
     if (!this.autoPlay || this.playbackInProgress) return;
     if (performance.now() < this.nextTickDueAt) return;
-    if (this.requestInFlight && !this.prefetchedTick) return;
     void this.devAdvanceTick();
   }
 
@@ -286,8 +328,6 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
       this.playbackInProgress = false;
     }
 
-    if (this.requestInFlight && !this.prefetchedTick) return;
-
     this.playbackInProgress = true;
     this.curtainDropped = false;
     this.tickStartedAt = performance.now();
@@ -298,28 +338,30 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
     });
 
     try {
-      const result = this.prefetchedTick ?? await this.fetchTick();
-      this.prefetchedTick = null;
-      this.currentTime = result.gameTime;
-
-      this.globalEventBus.emit("tick_playback_started", {
-        gameTime: result.gameTime,
-        eventCount: result.events?.length ?? 0,
-      });
-      for (const event of result.events || []) {
-        this.emit("event", event);
+      const playbackWindowMs = this.getLiveEventPlaybackWindowMs();
+      this.ensureLivePrefetch(this.autoPlay ? this.getMaxLiveTickSlots() : 1);
+      const activeSlot = this.liveTickSlots[0] ?? this.startTickRequest();
+      this.activateStreamPlayback(activeSlot.streamId, playbackWindowMs);
+      const result = await this.consumeNextLiveTick();
+      this.activateStreamPlayback(result.streamId, playbackWindowMs);
+      if (this.autoPlay) {
+        this.ensureLivePrefetch(this.getMaxLiveTickSlots());
       }
+      this.currentTime = result.gameTime;
       this.globalEventBus.emit("time_update", { ...this.currentTime });
+      this.bufferFinalTickEvents(result);
+      await this.waitForStreamDrain(result.streamId);
       this.globalEventBus.emit("tick_playback_events_flushed", {
         gameTime: result.gameTime,
         eventCount: result.events?.length ?? 0,
       });
 
+      await this.waitForTickPlaybackCompletion(result.events?.length ?? 0);
+
       if (this.autoPlay) {
-        this.ensurePrefetch();
+        this.ensureLivePrefetch(this.getMaxLiveTickSlots());
       }
 
-      await this.waitForTickPlaybackCompletion(result.events?.length ?? 0);
       this.globalEventBus.emit("simulation_status", {
         status: "idle",
         eventCount: result.eventCount,
@@ -337,41 +379,198 @@ export class PlaybackController extends Phaser.Events.EventEmitter {
         tickIntervalMs: this.tickIntervalMs,
       });
     } finally {
+      const finishedStreamId = this.activePlaybackStreamId;
+      this.activePlaybackStreamId = null;
+      if (finishedStreamId) {
+        setTimeout(() => {
+          this.tickStreams.delete(finishedStreamId);
+        }, 5000);
+      }
       this.playbackInProgress = false;
       if (this.autoPlay) {
-        this.nextTickDueAt = this.tickStartedAt + this.tickIntervalMs;
+        this.nextTickDueAt = Math.max(performance.now(), this.tickStartedAt + this.tickIntervalMs);
       } else {
         this.nextTickDueAt = 0;
       }
     }
   }
 
-  private async fetchTick(): Promise<TickResponse> {
-    this.requestInFlight = true;
-    try {
-      return await apiClient.simulateTick();
-    } finally {
-      this.requestInFlight = false;
+  private startTickRequest(): LiveTickSlot {
+    const startedAt = performance.now();
+    const streamId = `tick-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.getOrCreateStream(streamId);
+    const slot: LiveTickSlot = {
+      streamId,
+      promise: Promise.resolve(null as unknown as TickResponse),
+    };
+    slot.promise = apiClient.simulateTick({ streamId })
+      .then((result) => {
+        const tick = { ...result, streamId };
+        slot.result = tick;
+        return tick;
+      })
+      .catch((error) => {
+        slot.error = error;
+        throw error;
+      })
+      .finally(() => {
+        this.recordTickRequestDuration(performance.now() - startedAt);
+        const state = this.tickStreams.get(streamId);
+        if (state) state.complete = true;
+      });
+    this.liveTickSlots.push(slot);
+    return slot;
+  }
+
+  private ensureLivePrefetch(targetCount: number): void {
+    if (this.mode !== "live") return;
+    const count = Math.max(0, Math.min(this.getMaxLiveTickSlots(), Math.floor(targetCount)));
+    while (this.liveTickSlots.length < count) {
+      this.startTickRequest();
     }
   }
 
-  private ensurePrefetch(): void {
-    if (!this.autoPlay || this.prefetchedTick || this.requestInFlight) return;
-    void this.fetchTick()
-      .then((result) => {
-        this.prefetchedTick = result;
-      })
-      .catch((error) => {
-        this.autoPlay = false;
-        this.emitPlaybackState();
-        console.warn("[PlaybackController] Failed to prefetch tick:", error);
-        this.globalEventBus.emit("simulation_status", {
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-          autoPlay: this.autoPlay,
-          tickIntervalMs: this.tickIntervalMs,
-        });
+  private getMaxLiveTickSlots(): number {
+    return Math.max(1, this.maxLivePrefetchTicks + 1);
+  }
+
+  private async consumeNextLiveTick(): Promise<TickResponse> {
+    const slot = this.liveTickSlots[0] ?? this.startTickRequest();
+    try {
+      return slot.result ?? await slot.promise;
+    } finally {
+      const index = this.liveTickSlots.indexOf(slot);
+      if (index >= 0) {
+        this.liveTickSlots.splice(index, 1);
+      }
+    }
+  }
+
+  private recordTickRequestDuration(durationMs: number): void {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+    this.recentTickRequestDurations.push(durationMs);
+    if (this.recentTickRequestDurations.length > RECENT_TICK_DURATION_SAMPLE_SIZE) {
+      this.recentTickRequestDurations.shift();
+    }
+  }
+
+  private getLiveEventPlaybackWindowMs(): number {
+    if (!this.autoPlay || this.recentTickRequestDurations.length === 0) {
+      return MIN_LIVE_TICK_ESTIMATE_MS;
+    }
+    const total = this.recentTickRequestDurations.reduce((sum, duration) => sum + duration, 0);
+    const average = total / this.recentTickRequestDurations.length;
+    return Phaser.Math.Clamp(
+      average || DEFAULT_LIVE_TICK_ESTIMATE_MS,
+      MIN_LIVE_TICK_ESTIMATE_MS,
+      MAX_LIVE_TICK_ESTIMATE_MS,
+    );
+  }
+
+  private handleTickProgress = (progress: TickProgressInfo): void => {
+    if (this.mode !== "live" || !progress.streamId) return;
+    const state = this.getOrCreateStream(progress.streamId);
+    if (progress.phase === "tick_persisted") {
+      state.complete = true;
+    }
+    this.addEventsToStream(state, progress.events ?? []);
+    if (this.activePlaybackStreamId === progress.streamId) {
+      this.activateStreamPlayback(progress.streamId, this.getLiveEventPlaybackWindowMs());
+      this.drainActiveStreamBuffer(progress.streamId);
+    }
+  };
+
+  private getOrCreateStream(streamId: string): TickStreamState {
+    let state = this.tickStreams.get(streamId);
+    if (!state) {
+      state = {
+        streamId,
+        bufferedEvents: [],
+        knownEventIds: new Set(),
+        emittedEventIds: new Set(),
+        started: false,
+        draining: false,
+        complete: false,
+      };
+      this.tickStreams.set(streamId, state);
+    }
+    return state;
+  }
+
+  private activateStreamPlayback(streamId: string, estimatedDurationMs: number): void {
+    const state = this.getOrCreateStream(streamId);
+    this.activePlaybackStreamId = streamId;
+    if (!state.started) {
+      state.started = true;
+      this.globalEventBus.emit("tick_playback_started", {
+        gameTime: this.currentTime,
+        eventCount: 0,
+        estimatedDurationMs,
+        streaming: true,
       });
+    }
+    this.drainActiveStreamBuffer(streamId);
+  }
+
+  private bufferFinalTickEvents(result: TickResponse): void {
+    const state = this.getOrCreateStream(result.streamId);
+    state.complete = true;
+    this.addEventsToStream(state, result.events || []);
+    this.drainActiveStreamBuffer(result.streamId);
+  }
+
+  private addEventsToStream(state: TickStreamState, events: SimulationEvent[]): void {
+    for (const event of events) {
+      if (!event?.id || state.knownEventIds.has(event.id)) continue;
+      state.knownEventIds.add(event.id);
+      state.bufferedEvents.push(event);
+    }
+  }
+
+  private drainActiveStreamBuffer(streamId: string): void {
+    const state = this.tickStreams.get(streamId);
+    if (!state || state.draining) return;
+    state.draining = true;
+    void (async () => {
+      try {
+        while (this.activePlaybackStreamId === streamId && state.bufferedEvents.length > 0) {
+          const event = state.bufferedEvents.shift();
+          if (event && !state.emittedEventIds.has(event.id)) {
+            state.emittedEventIds.add(event.id);
+            this.emit("event", event);
+          }
+          if (state.bufferedEvents.length > 0) {
+            await this.delay(STREAM_EVENT_SPACING_MS);
+          }
+        }
+      } finally {
+        state.draining = false;
+        if (this.activePlaybackStreamId === streamId && state.bufferedEvents.length > 0) {
+          this.drainActiveStreamBuffer(streamId);
+        }
+      }
+    })();
+  }
+
+  private waitForStreamDrain(streamId: string): Promise<void> {
+    this.drainActiveStreamBuffer(streamId);
+    return new Promise((resolve) => {
+      const check = () => {
+        const state = this.tickStreams.get(streamId);
+        if (!state || (!state.draining && state.bufferedEvents.length === 0)) {
+          resolve();
+          return;
+        }
+        setTimeout(check, 50);
+      };
+      check();
+    });
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 
   private waitForTickPlaybackCompletion(eventCount: number): Promise<void> {

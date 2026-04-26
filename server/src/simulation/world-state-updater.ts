@@ -12,7 +12,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const RESERVED_GLOBAL_KEYS = new Set(["current_day", "current_tick"]);
 const RESERVED_GLOBAL_PREFIXES = ["dialogue_session:"];
 
-interface RuntimeObjectInfo {
+export interface RuntimeObjectInfo {
   id: string;
   name: string;
   locationId: string;
@@ -41,6 +41,15 @@ interface AppliedWorldStateUpdate {
   reason?: string;
 }
 
+export interface WorldStateUpdateSnapshot {
+  gameTime: GameTime;
+  sourceEvents: SimulationEvent[];
+  objects: RuntimeObjectInfo[];
+  worldName: string;
+  worldDescription: string;
+  worldState: { key: string; value: string }[];
+}
+
 export class WorldStateUpdater {
   constructor(
     private llmClient: LLMClient,
@@ -53,26 +62,50 @@ export class WorldStateUpdater {
     events: SimulationEvent[],
     gameTime: GameTime,
   ): Promise<SimulationEvent[]> {
-    if (!isWorldStateUpdaterEnabled()) return [];
+    const snapshot = this.createSnapshot(events, gameTime);
+    return snapshot ? this.updateFromSnapshot(snapshot) : [];
+  }
+
+  createSnapshot(
+    events: SimulationEvent[],
+    gameTime: GameTime,
+  ): WorldStateUpdateSnapshot | null {
+    if (!isWorldStateUpdaterEnabled()) return null;
 
     const sourceEvents = events
       .filter((event) => event.type !== "world_state_change")
       .slice(-getPositiveIntEnv("WORLD_STATE_UPDATE_MAX_EVENTS", DEFAULT_MAX_EVENTS));
-    if (sourceEvents.length === 0) return [];
+    if (sourceEvents.length === 0) return null;
 
     const objects = this.getRuntimeObjects();
-    if (objects.length === 0) return [];
+    if (objects.length === 0) return null;
 
+    return {
+      gameTime: { ...gameTime },
+      sourceEvents: sourceEvents.map(cloneSimulationEvent),
+      objects: objects.map((object) => ({
+        ...object,
+        knownStates: [...object.knownStates],
+      })),
+      worldName: this.worldManager.getWorldName(),
+      worldDescription: this.worldManager.getWorldDescription(),
+      worldState: this.worldManager.getAllGlobalState().map((state) => ({ ...state })),
+    };
+  }
+
+  async updateFromSnapshot(
+    snapshot: WorldStateUpdateSnapshot,
+  ): Promise<SimulationEvent[]> {
     try {
       const result = await this.llmClient.call({
         messages: this.promptBuilder.buildWorldStateUpdateMessages({
-          day: gameTime.day,
-          timeString: tickToSceneTimeWithPeriod(gameTime.tick),
-          worldName: this.worldManager.getWorldName(),
-          worldDescription: this.worldManager.getWorldDescription(),
-          eventSummary: this.formatEventSummary(sourceEvents),
-          objectStateBlock: formatObjectStateBlock(objects),
-          worldStateBlock: formatWorldStateBlock(this.worldManager.getAllGlobalState()),
+          day: snapshot.gameTime.day,
+          timeString: tickToSceneTimeWithPeriod(snapshot.gameTime.tick),
+          worldName: snapshot.worldName,
+          worldDescription: snapshot.worldDescription,
+          eventSummary: this.formatEventSummary(snapshot.sourceEvents),
+          objectStateBlock: formatObjectStateBlock(snapshot.objects),
+          worldStateBlock: formatWorldStateBlock(snapshot.worldState),
         }),
         schema: WorldStatePatchSchema,
         options: {
@@ -83,7 +116,7 @@ export class WorldStateUpdater {
         },
       });
 
-      const event = this.applyPatch(result.data, objects, gameTime);
+      const event = this.applyPatch(result.data, snapshot.objects, snapshot.gameTime);
       return event ? [event] : [];
     } catch (err) {
       console.warn(
@@ -309,6 +342,18 @@ function describeAppliedUpdates(
     parts.push(`${update.key}=${update.value}`);
   }
   return parts.join("；");
+}
+
+function cloneSimulationEvent(event: SimulationEvent): SimulationEvent {
+  return {
+    ...event,
+    data: cloneJSONRecord(event.data),
+    tags: [...(event.tags ?? [])],
+  };
+}
+
+function cloneJSONRecord(value: Record<string, any>): Record<string, any> {
+  return JSON.parse(JSON.stringify(value ?? {})) as Record<string, any>;
 }
 
 function isWorldStateUpdaterEnabled(): boolean {

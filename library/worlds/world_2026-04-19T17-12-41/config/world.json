@@ -427,7 +427,13 @@
     "height": 1536,
     "tileSize": 8,
     "gridWidth": 344,
-    "gridHeight": 192
+    "gridHeight": 192,
+    "metersPerTile": 1
+  },
+  "movement": {
+    "defaultWalkSpeedMetersPerMinute": 65,
+    "minMoveMinutes": 1,
+    "maxMoveTicks": null
   },
   "metadata": {
     "worldName": "Post-Victory Pixel Hamlet",

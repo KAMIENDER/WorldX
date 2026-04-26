@@ -29,6 +29,7 @@ export interface LLMCallResult<T> {
 
 export interface LLMCallLog {
   id: string;
+  tickRunId?: string;
   taskType: string;
   characterId?: string;
   model: string;

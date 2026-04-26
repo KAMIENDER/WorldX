@@ -2,6 +2,8 @@ import type {
   ActionDecision,
   SimulationEvent,
   GameTime,
+  CharacterProfile,
+  CharacterState,
 } from "../types/index.js";
 import type { WorldManager, MainAreaZone } from "../core/world-manager.js";
 import type { CharacterManager } from "../core/character-manager.js";
@@ -11,6 +13,15 @@ import { getDurationMinutes, getDurationTicks } from "../utils/duration.js";
 import { updateEmotion } from "../core/emotion-manager.js";
 
 const WORLD_ACTION_TARGET_PREFIX = "world_action:";
+
+interface MovementEstimate {
+  durationTicks: number;
+  durationMinutes: number;
+  distanceMeters: number | null;
+  pathPointIds?: string[];
+  walkSpeedMetersPerMinute: number;
+  usedFallbackStraightLine?: boolean;
+}
 
 export function executeAction(
   decision: ActionDecision,
@@ -192,13 +203,20 @@ export function executeAction(
               `${charId}:${gameTime.day}:${gameTime.tick}:main_area`,
             )
           : null;
+      const movementEstimate = estimateMovement(
+        worldManager,
+        profile,
+        state,
+        prevPointId,
+        nextPointId,
+      );
       characterManager.updateState(charId, {
         location: decision.targetId,
         mainAreaPointId: nextPointId,
         currentAction: "traveling",
         currentActionTarget: null,
         actionStartTick: absNow,
-        actionEndTick: absNow + 1,
+        actionEndTick: absNow + movementEstimate.durationTicks,
       });
 
       events.push({
@@ -213,6 +231,12 @@ export function executeAction(
           to: decision.targetId,
           fromPointId: prevPointId,
           toPointId: nextPointId,
+          duration: movementEstimate.durationTicks,
+          durationMinutes: movementEstimate.durationMinutes,
+          distanceMeters: movementEstimate.distanceMeters,
+          pathPointIds: movementEstimate.pathPointIds,
+          walkSpeedMetersPerMinute: movementEstimate.walkSpeedMetersPerMinute,
+          usedFallbackStraightLine: movementEstimate.usedFallbackStraightLine,
           reason: decision.reason,
         },
         innerMonologue,
@@ -251,13 +275,21 @@ export function executeAction(
         break;
       }
 
+      const movementEstimate = estimateMovement(
+        worldManager,
+        profile,
+        state,
+        state.mainAreaPointId,
+        nextPointId,
+      );
+
       characterManager.updateState(charId, {
         location: "main_area",
         mainAreaPointId: nextPointId,
         currentAction: "traveling",
         currentActionTarget: null,
         actionStartTick: absNow,
-        actionEndTick: absNow + 1,
+        actionEndTick: absNow + movementEstimate.durationTicks,
       });
 
       events.push({
@@ -273,6 +305,12 @@ export function executeAction(
           to: "main_area",
           fromPointId: state.mainAreaPointId,
           toPointId: nextPointId,
+          duration: movementEstimate.durationTicks,
+          durationMinutes: movementEstimate.durationMinutes,
+          distanceMeters: movementEstimate.distanceMeters,
+          pathPointIds: movementEstimate.pathPointIds,
+          walkSpeedMetersPerMinute: movementEstimate.walkSpeedMetersPerMinute,
+          usedFallbackStraightLine: movementEstimate.usedFallbackStraightLine,
           reason: decision.reason,
         },
         innerMonologue,
@@ -438,6 +476,104 @@ export function completeAction(
   });
 
   return events;
+}
+
+function estimateMovement(
+  worldManager: WorldManager,
+  profile: CharacterProfile,
+  state: CharacterState,
+  fromPointId: string | null | undefined,
+  toPointId: string | null | undefined,
+): MovementEstimate {
+  const sceneConfig = worldManager.getSceneConfig();
+  const movementConfig = worldManager.getMovementConfig();
+  const walkSpeedMetersPerMinute = getWalkSpeedMetersPerMinute(profile, state, worldManager);
+  const fallback = (): MovementEstimate => ({
+    durationTicks: 1,
+    durationMinutes: sceneConfig.tickDurationMinutes,
+    distanceMeters: null,
+    walkSpeedMetersPerMinute,
+  });
+
+  const path = worldManager.getMainAreaPathDistance(fromPointId, toPointId);
+  if (!path) return fallback();
+
+  const rawMinutes = path.meters / walkSpeedMetersPerMinute;
+  const durationMinutes = Math.max(movementConfig.minMoveMinutes, rawMinutes);
+  const unclampedTicks = Math.max(
+    1,
+    Math.ceil(durationMinutes / sceneConfig.tickDurationMinutes),
+  );
+  const durationTicks = movementConfig.maxMoveTicks
+    ? Math.min(movementConfig.maxMoveTicks, unclampedTicks)
+    : unclampedTicks;
+
+  return {
+    durationTicks,
+    durationMinutes: Math.round(durationMinutes * 10) / 10,
+    distanceMeters: Math.round(path.meters * 10) / 10,
+    pathPointIds: path.pointIds,
+    walkSpeedMetersPerMinute: Math.round(walkSpeedMetersPerMinute * 10) / 10,
+    usedFallbackStraightLine: path.usedFallbackStraightLine,
+  };
+}
+
+function getWalkSpeedMetersPerMinute(
+  profile: CharacterProfile,
+  state: CharacterState,
+  worldManager: WorldManager,
+): number {
+  const baseSpeed =
+    typeof profile.baseWalkSpeedMetersPerMinute === "number" &&
+    Number.isFinite(profile.baseWalkSpeedMetersPerMinute) &&
+    profile.baseWalkSpeedMetersPerMinute > 0
+      ? profile.baseWalkSpeedMetersPerMinute
+      : worldManager.getMovementConfig().defaultWalkSpeedMetersPerMinute;
+  const ageFactor = getAgeSpeedFactor(state);
+  const conditionFactor = getConditionSpeedFactor(state.bodyCondition);
+  const healthFactor = clamp(0.35 + (state.health / 100) * 0.65, 0.35, 1.05);
+  const energyFactor = clamp(0.45 + (state.energy / 100) * 0.55, 0.45, 1);
+  const loadFactor = getLoadSpeedFactor(state.carryWeightKg);
+  return Math.max(
+    5,
+    baseSpeed * ageFactor * conditionFactor * healthFactor * energyFactor * loadFactor,
+  );
+}
+
+function getAgeSpeedFactor(state: CharacterState): number {
+  if (state.ageYears >= 85) return 0.45;
+  if (state.ageYears >= 75) return 0.58;
+  if (state.ageYears >= 65) return 0.72;
+  if (state.lifeStage === "child") return 0.78;
+  if (state.lifeStage === "teen") return 0.95;
+  return 1;
+}
+
+function getConditionSpeedFactor(condition: CharacterState["bodyCondition"]): number {
+  switch (condition) {
+    case "tired":
+      return 0.78;
+    case "sick":
+      return 0.58;
+    case "injured":
+      return 0.48;
+    case "critical":
+      return 0.25;
+    case "dead":
+      return 0;
+    case "healthy":
+    default:
+      return 1;
+  }
+}
+
+function getLoadSpeedFactor(carryWeightKg: number): number {
+  if (!Number.isFinite(carryWeightKg) || carryWeightKg <= 5) return 1;
+  return clamp(1 - ((carryWeightKg - 5) / 45) * 0.55, 0.45, 1);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function applyEffect(

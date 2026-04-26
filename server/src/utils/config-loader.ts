@@ -146,6 +146,12 @@ function normalizeCharacterProfile(raw: any): CharacterProfile | null {
     genderLabel: firstString(raw.genderLabel, raw.gender),
     socialClass: firstString(raw.socialClass, raw.classStatus, raw.status),
     occupation: firstString(raw.occupation, raw.job, raw.role),
+    baseWalkSpeedMetersPerMinute: normalizeOptionalPositiveNumber(
+      raw.baseWalkSpeedMetersPerMinute ?? raw.walkSpeedMetersPerMinute,
+    ),
+    carryWeightKg: normalizeOptionalNonNegativeNumber(
+      raw.carryWeightKg ?? raw.initialCarryWeightKg ?? raw.loadKg,
+    ),
     homeLocation: firstString(raw.homeLocation, raw.home),
     workLocation: firstString(raw.workLocation, raw.workplace, raw.work),
     family: toStringArray(raw.family),
@@ -248,6 +254,24 @@ function normalizeOptionalAge(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return Math.max(0, Math.min(120, Math.round(parsed)));
   }
   return undefined;
+}
+
+function normalizeOptionalPositiveNumber(value: unknown): number | undefined {
+  const num = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value)
+      : NaN;
+  return Number.isFinite(num) && num > 0 ? num : undefined;
+}
+
+function normalizeOptionalNonNegativeNumber(value: unknown): number | undefined {
+  const num = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value)
+      : NaN;
+  return Number.isFinite(num) && num >= 0 ? num : undefined;
 }
 
 function normalizeStartLocation(startPosition: unknown): string {

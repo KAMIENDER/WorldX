@@ -419,7 +419,10 @@ function formatPhysicalState(state: CharacterState): string {
   const conditionLabel = getBodyConditionLabel(state.bodyCondition);
   const lifeStageLabel = getLifeStageLabel(state.lifeStage);
   const goal = state.shortTermGoal ? `，当前目标：${state.shortTermGoal}` : "";
-  return `${state.ageYears}岁，${lifeStageLabel}，身体${conditionLabel}，健康值${Math.round(state.health)}/100，体力${Math.round(state.energy)}/100，饥饿${Math.round(state.hunger)}/100，压力${Math.round(state.stress)}/100，钱${Math.round(state.money)}${goal}`;
+  const load = state.carryWeightKg > 0
+    ? `，负重${Math.round(state.carryWeightKg * 10) / 10}公斤`
+    : "";
+  return `${state.ageYears}岁，${lifeStageLabel}，身体${conditionLabel}，健康值${Math.round(state.health)}/100，体力${Math.round(state.energy)}/100，饥饿${Math.round(state.hunger)}/100，压力${Math.round(state.stress)}/100，钱${Math.round(state.money)}${load}${goal}`;
 }
 
 function formatLifeProfile(profile: CharacterProfile): string {

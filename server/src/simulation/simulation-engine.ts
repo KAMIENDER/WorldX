@@ -1,3 +1,4 @@
+import type { EventEmitter } from "node:events";
 import type {
   ActionDecision,
   DialogueEventData,
@@ -14,7 +15,7 @@ import type { LLMClient } from "../llm/llm-client.js";
 import type { PromptBuilder } from "../llm/prompt-builder.js";
 import { DecisionMaker } from "./decision-maker.js";
 import { DialogueGenerator } from "./dialogue-generator.js";
-import { WorldStateUpdater } from "./world-state-updater.js";
+import { WorldStateUpdater, type WorldStateUpdateSnapshot } from "./world-state-updater.js";
 import { buildPerception } from "./perceiver.js";
 import { buildActionMenu } from "./action-menu-builder.js";
 import { executeAction, completeAction } from "./action-executor.js";
@@ -35,6 +36,16 @@ import * as eventStore from "../store/event-store.js";
 import { calculateDramScore, flagHighDramaEvents } from "../content/drama-scorer.js";
 import { extractQuotes } from "../content/quote-extractor.js";
 import { generateDailySummary } from "../content/summary-generator.js";
+import {
+  failTickRun,
+  finishTickRunBackground,
+  finishTickRunCritical,
+  getCurrentTickTraceContext,
+  recordTickPhase,
+  runWithTickTrace,
+  startTickRun,
+  type TickTraceContext,
+} from "../store/tick-trace-store.js";
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -51,6 +62,39 @@ const DEFAULT_DECISION_CONCURRENCY = 3;
 
 type TickIntent = {
   decision: ActionDecision;
+};
+
+type SimulateTickOptions = {
+  streamId?: string;
+};
+
+type TickProgressPhase =
+  | "tick_started"
+  | "passive_update_done"
+  | "prepare_done"
+  | "decision_wave_started"
+  | "character_decision_started"
+  | "character_decision_done"
+  | "action_events_ready"
+  | "dialogue_wave_started"
+  | "dialogue_turn_ready"
+  | "dialogue_complete_ready"
+  | "world_state_update_started"
+  | "world_state_update_done"
+  | "tick_persisted";
+
+type TickProgressPayload = {
+  streamId?: string;
+  phase: TickProgressPhase;
+  label: string;
+  at: number;
+  gameTime: GameTime;
+  events?: SimulationEvent[];
+  characterId?: string;
+  characterName?: string;
+  current?: number;
+  total?: number;
+  eventCount?: number;
 };
 
 function getDecisionConcurrency(total: number): number {
@@ -96,12 +140,15 @@ export class SimulationEngine {
   private dialogueGenerator: DialogueGenerator;
   private worldStateUpdater: WorldStateUpdater;
   private memoryEvalQueue: Promise<void> = Promise.resolve();
+  private worldStateUpdateQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private worldManager: WorldManager,
     private characterManager: CharacterManager,
     private llmClient: LLMClient,
     private promptBuilder: PromptBuilder,
+    private eventBus?: EventEmitter,
+    private getCurrentTimelineId?: () => string | null,
   ) {
     this.decisionMaker = new DecisionMaker(
       llmClient,
@@ -123,103 +170,196 @@ export class SimulationEngine {
     );
   }
 
-  async simulateTick(): Promise<SimulationEvent[]> {
+  async simulateTick(options: SimulateTickOptions = {}): Promise<SimulationEvent[]> {
     const events: SimulationEvent[] = [];
     const tickAdvance = this.worldManager.advanceTick();
     const { previousTime, currentTime: gameTime, didAdvanceDay } = tickAdvance;
     const absNow = absoluteTick(gameTime);
-
-    if (didAdvanceDay) {
-      events.push(...await this.runCycleTransition(previousTime));
-      return this.finalizeTickEvents(events);
-    }
-
-    const allChars = shuffle(this.characterManager.getAliveProfiles());
-
-    for (const char of allChars) {
-      events.push(
-        ...this.characterManager.tickPassiveUpdate(char.id, gameTime),
-      );
-    }
-
-    const activeSessions = this.reconcileDialogueSessions();
-    const decisionEligible: string[] = [];
-
-    for (const char of allChars) {
-      try {
-        const shouldDecide = this.prepareCharacterForTick(
-          char.id,
-          gameTime,
-          absNow,
-          events,
-        );
-        if (shouldDecide) {
-          decisionEligible.push(char.id);
-        }
-      } catch (err) {
-        console.error(`[SimEngine] Error preparing ${char.id}:`, err);
-      }
-    }
-
-    const intents = await this.buildTickIntents(decisionEligible, gameTime, events);
-    const dialogueIntentByInitiator = new Map<string, ActionDecision>();
-
-    for (const charId of decisionEligible) {
-      const intent = intents.get(charId);
-      if (intent?.decision.actionType === "talk_to") {
-        dialogueIntentByInitiator.set(charId, intent.decision);
-      }
-    }
-
-    const selectedSessions = this.selectDialogueSessions({
-      allChars,
+    const traceContext = startTickRun({
+      streamId: options.streamId,
+      timelineId: this.getCurrentTimelineId?.() ?? null,
       gameTime,
-      activeSessions,
-      dialogueIntentByInitiator,
-      absNow,
     });
-    const charsReservedForDialogue = new Set(
-      selectedSessions.flatMap((session) => session.participants),
+
+    return runWithTickTrace(traceContext, () =>
+      this.simulateTickWithTrace({
+        events,
+        previousTime,
+        gameTime,
+        didAdvanceDay,
+        absNow,
+        options,
+        traceRunId: traceContext.runId,
+      }),
     );
+  }
 
-    for (const charId of decisionEligible) {
-      if (charsReservedForDialogue.has(charId)) continue;
+  private async simulateTickWithTrace(input: {
+    events: SimulationEvent[];
+    previousTime: GameTime;
+    gameTime: GameTime;
+    didAdvanceDay: boolean;
+    absNow: number;
+    options: SimulateTickOptions;
+    traceRunId: string;
+  }): Promise<SimulationEvent[]> {
+    const { events, previousTime, gameTime, didAdvanceDay, absNow, options, traceRunId } = input;
+    try {
+      this.emitTickProgress(options, {
+        phase: "tick_started",
+        label: `第 ${gameTime.day} 天第 ${gameTime.tick} 个 tick 开始`,
+        gameTime,
+      });
 
-      const intent = intents.get(charId);
-      if (!intent || intent.decision.actionType === "talk_to") continue;
+      if (didAdvanceDay) {
+        events.push(...await this.runCycleTransition(previousTime));
+        const finalized = this.finalizeTickEvents(events);
+        this.emitTickProgress(options, {
+          phase: "tick_persisted",
+          label: `场景切换完成，写入 ${finalized.length} 个事件`,
+          gameTime,
+          eventCount: finalized.length,
+        });
+        finishTickRunCritical(traceRunId, {
+          eventCount: finalized.length,
+          hasBackgroundWork: false,
+        });
+        return finalized;
+      }
 
-      events.push(
-        ...executeAction(
+      const allChars = shuffle(this.characterManager.getAliveProfiles());
+
+      for (const char of allChars) {
+        events.push(
+          ...this.characterManager.tickPassiveUpdate(char.id, gameTime),
+        );
+      }
+      this.emitTickProgress(options, {
+        phase: "passive_update_done",
+        label: `${allChars.length} 名角色的身体和状态已更新`,
+        gameTime,
+        eventCount: events.length,
+      });
+
+      const activeSessions = this.reconcileDialogueSessions();
+      const decisionEligible: string[] = [];
+
+      for (const char of allChars) {
+        try {
+          const shouldDecide = this.prepareCharacterForTick(
+            char.id,
+            gameTime,
+            absNow,
+            events,
+          );
+          if (shouldDecide) {
+            decisionEligible.push(char.id);
+          }
+        } catch (err) {
+          console.error(`[SimEngine] Error preparing ${char.id}:`, err);
+        }
+      }
+      this.emitTickProgress(options, {
+        phase: "prepare_done",
+        label: `${decisionEligible.length} 名角色需要决定下一步`,
+        gameTime,
+        total: decisionEligible.length,
+      });
+
+      const intents = await this.buildTickIntents(decisionEligible, gameTime, events, options);
+      const dialogueIntentByInitiator = new Map<string, ActionDecision>();
+
+      for (const charId of decisionEligible) {
+        const intent = intents.get(charId);
+        if (intent?.decision.actionType === "talk_to") {
+          dialogueIntentByInitiator.set(charId, intent.decision);
+        }
+      }
+
+      const selectedSessions = this.selectDialogueSessions({
+        allChars,
+        gameTime,
+        activeSessions,
+        dialogueIntentByInitiator,
+        absNow,
+      });
+      const charsReservedForDialogue = new Set(
+        selectedSessions.flatMap((session) => session.participants),
+      );
+
+      for (const charId of decisionEligible) {
+        if (charsReservedForDialogue.has(charId)) continue;
+
+        const intent = intents.get(charId);
+        if (!intent || intent.decision.actionType === "talk_to") continue;
+
+        const actionEvents = executeAction(
           intent.decision,
           charId,
           this.worldManager,
           this.characterManager,
           gameTime,
+        );
+        events.push(...actionEvents);
+        const profile = this.characterManager.getProfile(charId);
+        this.emitTickProgress(options, {
+          phase: "action_events_ready",
+          label: `${profile.name} 开始执行：${this.describeDecision(intent.decision)}`,
+          gameTime,
+          characterId: charId,
+          characterName: profile.name,
+          eventCount: actionEvents.length,
+          events: actionEvents,
+        });
+      }
+
+      if (selectedSessions.length > 0) {
+        this.emitTickProgress(options, {
+          phase: "dialogue_wave_started",
+          label: `${selectedSessions.length} 组对话开始生成`,
+          gameTime,
+          total: selectedSessions.length,
+        });
+      }
+      const sessionResults = await Promise.allSettled(
+        selectedSessions.map((session) =>
+          this.runDialogueSession(session, gameTime, absNow, options),
         ),
       );
-    }
 
-    const sessionResults = await Promise.allSettled(
-      selectedSessions.map((session) =>
-        this.runDialogueSession(session, gameTime, absNow),
-      ),
-    );
-
-    for (const result of sessionResults) {
-      if (result.status === "fulfilled") {
-        events.push(...result.value);
-      } else {
-        console.error("[SimEngine] Dialogue session error:", result.reason);
+      for (const result of sessionResults) {
+        if (result.status === "fulfilled") {
+          events.push(...result.value);
+        } else {
+          console.error("[SimEngine] Dialogue session error:", result.reason);
+        }
       }
-    }
 
-    if (this.shouldRunMicroReflectionWave(gameTime)) {
-      events.push(...await this.runMicroReflectionWave(gameTime));
-    }
+      if (this.shouldRunMicroReflectionWave(gameTime)) {
+        events.push(...await this.runMicroReflectionWave(gameTime));
+      }
 
-    events.push(...await this.worldStateUpdater.updateFromEvents(events, gameTime));
-    this.scheduleRecentMemoryEvaluation(gameTime);
-    return this.finalizeTickEvents(events);
+      const hasBackgroundWork = this.enqueueWorldStateUpdate(events, gameTime, options);
+      this.scheduleRecentMemoryEvaluation(gameTime);
+      const finalized = this.finalizeTickEvents(events);
+      this.emitTickProgress(options, {
+        phase: "tick_persisted",
+        label: `本轮完成，写入 ${finalized.length} 个事件`,
+        gameTime,
+        eventCount: finalized.length,
+      });
+      finishTickRunCritical(traceRunId, {
+        eventCount: finalized.length,
+        hasBackgroundWork,
+      });
+      return finalized;
+    } catch (err) {
+      failTickRun(traceRunId, {
+        eventCount: events.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
   }
 
   async simulateDay(): Promise<SimulationEvent[]> {
@@ -267,6 +407,82 @@ export class SimulationEngine {
       eventStore.appendEvents(events);
     }
     return events;
+  }
+
+  private enqueueWorldStateUpdate(
+    events: SimulationEvent[],
+    gameTime: GameTime,
+    options: SimulateTickOptions,
+  ): boolean {
+    const snapshot = this.worldStateUpdater.createSnapshot(events, gameTime);
+    if (!snapshot) return false;
+
+    this.emitTickProgress(options, {
+      phase: "world_state_update_started",
+      label: "世界状态已进入后台更新队列",
+      gameTime: snapshot.gameTime,
+      eventCount: snapshot.sourceEvents.length,
+    });
+
+    const streamOptions = { ...options };
+    const traceContext = getCurrentTickTraceContext();
+    const runUpdate = async () => {
+      try {
+        await this.runQueuedWorldStateUpdate(snapshot, streamOptions);
+        if (traceContext) {
+          finishTickRunBackground(traceContext.runId);
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        console.warn("[SimEngine] Async world state update error:", error);
+        this.emitTickProgress(streamOptions, {
+          phase: "world_state_update_done",
+          label: "世界状态后台更新失败",
+          gameTime: snapshot.gameTime,
+          eventCount: 0,
+          events: [],
+        });
+        if (traceContext) {
+          finishTickRunBackground(traceContext.runId, {
+            status: "background_failed",
+            error,
+          });
+        }
+      }
+    };
+
+    this.worldStateUpdateQueue = this.worldStateUpdateQueue
+      .catch(() => undefined)
+      .then(() =>
+        traceContext
+          ? runWithTickTrace(traceContext, runUpdate)
+          : runUpdate(),
+      );
+    return true;
+  }
+
+  private async runQueuedWorldStateUpdate(
+    snapshot: WorldStateUpdateSnapshot,
+    options: SimulateTickOptions,
+  ): Promise<void> {
+    this.emitTickProgress(options, {
+      phase: "world_state_update_started",
+      label: "世界状态正在后台更新",
+      gameTime: snapshot.gameTime,
+      eventCount: snapshot.sourceEvents.length,
+    });
+
+    const worldStateEvents = await this.worldStateUpdater.updateFromSnapshot(snapshot);
+    const finalized = this.finalizeTickEvents(worldStateEvents);
+    this.emitTickProgress(options, {
+      phase: "world_state_update_done",
+      label: finalized.length > 0
+        ? `世界状态后台更新完成，新增 ${finalized.length} 个事件`
+        : "世界状态后台检查完成",
+      gameTime: snapshot.gameTime,
+      eventCount: finalized.length,
+      events: finalized,
+    });
   }
 
   private async runCycleTransition(
@@ -497,11 +713,32 @@ export class SimulationEngine {
     charIds: string[],
     gameTime: GameTime,
     events: SimulationEvent[],
+    options: SimulateTickOptions,
   ): Promise<Map<string, TickIntent>> {
+    let completed = 0;
+    if (charIds.length > 0) {
+      this.emitTickProgress(options, {
+        phase: "decision_wave_started",
+        label: `${charIds.length} 名角色开始并发思考`,
+        gameTime,
+        current: 0,
+        total: charIds.length,
+      });
+    }
     const results = await allSettledWithConcurrency(
       charIds,
       getDecisionConcurrency(charIds.length),
       async (charId) => {
+        const profile = this.characterManager.getProfile(charId);
+        this.emitTickProgress(options, {
+          phase: "character_decision_started",
+          label: `${profile.name} 正在思考下一步`,
+          gameTime,
+          characterId: charId,
+          characterName: profile.name,
+          current: completed,
+          total: charIds.length,
+        });
         const perception = buildPerception(
           charId,
           this.worldManager,
@@ -525,6 +762,16 @@ export class SimulationEngine {
         );
         const decision = this.normalizeDecision(rawDecision);
         const intent: TickIntent = { decision };
+        completed += 1;
+        this.emitTickProgress(options, {
+          phase: "character_decision_done",
+          label: `${profile.name} 决定：${this.describeDecision(decision)}`,
+          gameTime,
+          characterId: charId,
+          characterName: profile.name,
+          current: completed,
+          total: charIds.length,
+        });
         return [charId, intent] as const;
       },
     );
@@ -758,6 +1005,7 @@ export class SimulationEngine {
     session: DialogueSession,
     gameTime: GameTime,
     absNow: number,
+    options: SimulateTickOptions,
   ): Promise<SimulationEvent[]> {
     const events: SimulationEvent[] = [];
     let workingSession = { ...session, turnsThisTick: 0 };
@@ -769,8 +1017,14 @@ export class SimulationEngine {
           session: workingSession,
           gameTime,
         });
-        events.push(
-          this.dialogueCompleteToEvent(workingSession, finalDialogue, gameTime),
+        events.push(this.dialogueCompleteToEvent(workingSession, finalDialogue, gameTime));
+        this.emitDialogueProgress(
+          workingSession,
+          options,
+          gameTime,
+          "dialogue_complete_ready",
+          "对话已收束",
+          events[events.length - 1],
         );
         this.finishDialogueSession(workingSession, absNow);
         return events;
@@ -799,6 +1053,14 @@ export class SimulationEngine {
             gameTime,
           ),
         );
+        this.emitDialogueProgress(
+          workingSession,
+          options,
+          gameTime,
+          "dialogue_turn_ready",
+          `${this.characterManager.getProfile(generated.turn.speaker).name} 说了一句`,
+          events[events.length - 1],
+        );
 
         if (!generated.shouldContinue) {
           workingSession.endReason = generated.endReason ?? "自然结束";
@@ -806,8 +1068,14 @@ export class SimulationEngine {
             session: workingSession,
             gameTime,
           });
-          events.push(
-            this.dialogueCompleteToEvent(workingSession, finalDialogue, gameTime),
+          events.push(this.dialogueCompleteToEvent(workingSession, finalDialogue, gameTime));
+          this.emitDialogueProgress(
+            workingSession,
+            options,
+            gameTime,
+            "dialogue_complete_ready",
+            "对话已生成总结",
+            events[events.length - 1],
           );
           this.finishDialogueSession(workingSession, absNow);
           return events;
@@ -832,6 +1100,65 @@ export class SimulationEngine {
       );
       this.cleanupBrokenDialogueSession(workingSession);
       return events;
+    }
+  }
+
+  private emitDialogueProgress(
+    session: DialogueSession,
+    options: SimulateTickOptions,
+    gameTime: GameTime,
+    phase: "dialogue_turn_ready" | "dialogue_complete_ready",
+    label: string,
+    event?: SimulationEvent,
+  ): void {
+    const names = session.participants
+      .map((id) => this.characterManager.getProfile(id).name)
+      .join(" / ");
+    this.emitTickProgress(options, {
+      phase,
+      label: `${names}：${label}`,
+      gameTime,
+      eventCount: event ? 1 : 0,
+      events: event ? [event] : [],
+    });
+  }
+
+  private emitTickProgress(
+    options: SimulateTickOptions,
+    payload: Omit<TickProgressPayload, "at" | "streamId">,
+  ): void {
+    recordTickPhase(payload.phase, payload.label, {
+      streamId: options.streamId,
+      characterId: payload.characterId,
+      characterName: payload.characterName,
+      current: payload.current,
+      total: payload.total,
+      eventCount: payload.eventCount,
+      eventIds: payload.events?.map((event) => event.id).slice(0, 20),
+    });
+    if (!this.eventBus) return;
+    this.eventBus.emit("tick_progress", {
+      ...payload,
+      streamId: options.streamId,
+      at: Date.now(),
+    } satisfies TickProgressPayload);
+  }
+
+  private describeDecision(decision: ActionDecision): string {
+    switch (decision.actionType) {
+      case "talk_to":
+        return `找 ${decision.targetId} 说话`;
+      case "move_to":
+      case "move_within_main_area":
+        return `移动到 ${decision.targetId}`;
+      case "interact_object":
+        return decision.interactionId
+          ? `使用 ${decision.targetId} / ${decision.interactionId}`
+          : `使用 ${decision.targetId}`;
+      case "world_action":
+        return `进行 ${decision.targetId}`;
+      case "idle":
+        return "短暂停留";
     }
   }
 

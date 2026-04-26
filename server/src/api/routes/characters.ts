@@ -36,10 +36,11 @@ router.get("/", (_req, res) => {
 	      bodyCondition: s.bodyCondition,
 	      bodyConditionLabel: getBodyConditionLabel(s.bodyCondition),
 	      energy: s.energy,
-	      hunger: s.hunger,
-	      stress: s.stress,
-	      money: s.money,
-	      shortTermGoal: s.shortTermGoal,
+		      hunger: s.hunger,
+		      stress: s.stress,
+		      money: s.money,
+		      carryWeightKg: s.carryWeightKg,
+		      shortTermGoal: s.shortTermGoal,
 	      isAlive: s.isAlive,
 	      anchor: p.anchor || null,
 	      socialClass: p.socialClass,
@@ -114,14 +115,21 @@ router.patch("/:id/runtime-state", (req: Request, res: Response) => {
     return res.status(404).json({ error: "Character not found" });
   }
 
-  const { mainAreaPointId } = req.body ?? {};
+  const { mainAreaPointId, carryWeightKg } = req.body ?? {};
   if (mainAreaPointId !== undefined && mainAreaPointId !== null && typeof mainAreaPointId !== "string") {
     return res.status(400).json({ error: "mainAreaPointId must be a string or null" });
   }
+  if (
+    carryWeightKg !== undefined &&
+    (typeof carryWeightKg !== "number" || !Number.isFinite(carryWeightKg) || carryWeightKg < 0)
+  ) {
+    return res.status(400).json({ error: "carryWeightKg must be a non-negative number" });
+  }
 
-  appContext.characterManager.updateState(charId, {
-    mainAreaPointId: mainAreaPointId ?? null,
-  });
+  const patch: { mainAreaPointId?: string | null; carryWeightKg?: number } = {};
+  if (mainAreaPointId !== undefined) patch.mainAreaPointId = mainAreaPointId ?? null;
+  if (carryWeightKg !== undefined) patch.carryWeightKg = carryWeightKg;
+  appContext.characterManager.updateState(charId, patch);
   const state = appContext.characterManager.getState(charId);
   res.json({ ok: true, state });
 });

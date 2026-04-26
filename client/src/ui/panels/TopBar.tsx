@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { WorldTimeInfo, TimelineMeta } from "../../types/api";
 import { apiClient } from "../services/api-client";
-import type { WorldInfo, GeneratedWorldSummary } from "../services/api-client";
+import type { WorldInfo, GeneratedWorldSummary, TickProgressInfo } from "../services/api-client";
 import { GodPanel } from "./GodPanel";
 import { SandboxChatPanel } from "./SandboxChatPanel";
 import { TimelineManagerModal } from "./TimelineManagerModal";
@@ -14,6 +14,15 @@ import { translatePeriod } from "../utils/time-i18n";
 import { sortLibraryWorldsForLocale } from "../utils/library-world-sort";
 
 type ViewMode = "run" | "replay";
+
+type PlaybackProgressInfo = {
+  label: string;
+  at: number;
+  eventId?: string;
+  durationMs?: number;
+};
+
+const STREAM_PANEL_COLLAPSED_KEY = "worldx.streamPanelCollapsed";
 
 export function TopBar({
   worldInfo,
@@ -35,6 +44,8 @@ export function TopBar({
   isResetting,
   isReplaying,
   replayProgress,
+  tickProgress,
+  playbackProgress,
   onHeightChange,
 }: {
   worldInfo?: WorldInfo | null;
@@ -56,6 +67,8 @@ export function TopBar({
   isResetting: boolean;
   isReplaying: boolean;
   replayProgress: { current: number; total: number } | null;
+  tickProgress: TickProgressInfo[];
+  playbackProgress?: PlaybackProgressInfo | null;
   onHeightChange?: (height: number) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -75,6 +88,11 @@ export function TopBar({
   const [viewMode, setViewMode] = useState<ViewMode>(
     () => new URLSearchParams(window.location.search).get("mode") === "replay" ? "replay" : "run",
   );
+  const [streamPanelCollapsed, setStreamPanelCollapsed] = useState(() => {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem(STREAM_PANEL_COLLAPSED_KEY) === "1";
+  });
+  const [streamNowMs, setStreamNowMs] = useState(() => Date.now());
   const barRef = useRef<HTMLDivElement | null>(null);
   const isRunning = simStatus === "running";
   const isBusy = isRunning || isResetting || isSwitchingWorld || isSwitchingTimeline || isChangingTickGranularity;
@@ -140,6 +158,17 @@ export function TopBar({
       window.removeEventListener("resize", notifyHeight);
     };
   }, [onHeightChange]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(STREAM_PANEL_COLLAPSED_KEY, streamPanelCollapsed ? "1" : "0");
+  }, [streamPanelCollapsed]);
+
+  useEffect(() => {
+    if (!inRunMode || !playbackProgress) return;
+    const timer = window.setInterval(() => setStreamNowMs(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [inRunMode, playbackProgress]);
 
   const handleSwitchToReplay = async () => {
     try {
@@ -258,6 +287,36 @@ export function TopBar({
     [libraryWorlds, i18n.resolvedLanguage, i18n.language],
   );
   const allWorlds = [...availableWorlds, ...sortedLibraryWorlds];
+  const latestTickProgress = tickProgress[0] ?? null;
+  const generationStreamCount = new Set(
+    tickProgress
+      .map((progress) => progress.streamId)
+      .filter((streamId): streamId is string => Boolean(streamId)),
+  ).size;
+  const generationProgressRatio = getTickProgressRatio(latestTickProgress);
+  const generationLabel = latestTickProgress?.label
+    ?? (autoPlayEnabled || simStatus === "running"
+      ? t("topbar.streamWaitingGeneration")
+      : t("topbar.streamIdle"));
+  const generationMeta = buildGenerationMeta(latestTickProgress, generationStreamCount, t);
+  const playbackRatio = playbackProgress?.durationMs
+    ? Math.max(0, Math.min(100, ((streamNowMs - playbackProgress.at) / playbackProgress.durationMs) * 100))
+    : playbackProgress
+      ? 50
+      : null;
+  const playbackLabel = playbackProgress?.label
+    ?? (autoPlayEnabled || simStatus === "running"
+      ? t("topbar.streamWaitingPlayback")
+      : t("topbar.streamIdle"));
+  const playbackMeta = playbackProgress
+    ? t("topbar.streamProgress", { percent: Math.round(playbackRatio ?? 0) })
+    : "";
+  const showStreamPanel = inRunMode && (
+    !!latestTickProgress ||
+    !!playbackProgress ||
+    autoPlayEnabled ||
+    simStatus === "running"
+  );
 
   const handleWorldChange = async (event: ChangeEvent<HTMLSelectElement>) => {
     const nextWorldId = event.target.value;
@@ -306,7 +365,9 @@ export function TopBar({
         borderRadius: "var(--hud-radius)",
         boxShadow: "var(--hud-shadow)",
         pointerEvents: "auto",
-        maxHeight: "min(154px, calc(100vh - 24px))",
+        maxHeight: streamPanelCollapsed
+          ? "min(164px, calc(100vh - 24px))"
+          : "min(220px, calc(100vh - 24px))",
         overflowY: "auto",
         scrollbarWidth: "none",
       }}
@@ -390,6 +451,54 @@ export function TopBar({
               transition: "width 0.3s ease",
             }} />
           </div>
+        </div>
+      )}
+
+      {showStreamPanel && (
+        <div style={streamPanelStyle(streamPanelCollapsed)}>
+          <button
+            type="button"
+            onClick={() => setStreamPanelCollapsed((current) => !current)}
+            style={streamPanelHeaderStyle}
+            title={streamPanelCollapsed ? t("topbar.streamExpand") : t("topbar.streamCollapse")}
+          >
+            <span style={streamPanelTitleStyle}>{t("topbar.streamStatus")}</span>
+            <span style={streamPanelHintStyle}>
+              {streamPanelCollapsed ? t("topbar.streamExpand") : t("topbar.streamCollapse")}
+            </span>
+          </button>
+
+          {streamPanelCollapsed ? (
+            <div style={streamCompactRowStyle}>
+              <StreamCompactPill
+                label={t("topbar.generationStream")}
+                value={generationLabel}
+                tone="blue"
+              />
+              <StreamCompactPill
+                label={t("topbar.playbackStream")}
+                value={playbackLabel}
+                tone="gold"
+              />
+            </div>
+          ) : (
+            <div style={streamBarGridStyle}>
+              <StreamStatusBar
+                label={t("topbar.generationStream")}
+                value={generationLabel}
+                meta={generationMeta}
+                ratio={generationProgressRatio}
+                tone="blue"
+              />
+              <StreamStatusBar
+                label={t("topbar.playbackStream")}
+                value={playbackLabel}
+                meta={playbackMeta}
+                ratio={playbackRatio}
+                tone="gold"
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -569,6 +678,97 @@ export function TopBar({
   );
 }
 
+function StreamStatusBar({
+  label,
+  value,
+  meta,
+  ratio,
+  tone,
+}: {
+  label: string;
+  value: string;
+  meta?: string;
+  ratio: number | null;
+  tone: "blue" | "gold";
+}) {
+  const color = tone === "blue" ? "var(--hud-blue)" : "var(--hud-gold)";
+  const percent = ratio == null ? 0 : Math.max(0, Math.min(100, ratio));
+  return (
+    <div style={streamStatusBarStyle}>
+      <div style={streamStatusHeaderStyle}>
+        <span style={{ ...streamStatusLabelStyle, color }}>{label}</span>
+        {meta ? <span style={streamStatusMetaStyle}>{meta}</span> : null}
+      </div>
+      <div style={streamStatusBodyStyle}>
+        <span style={streamStatusTextStyle} title={value}>{value}</span>
+        <div style={streamStatusTrackStyle}>
+          <div
+            style={{
+              ...streamStatusFillStyle,
+              width: ratio == null ? "34%" : `${percent}%`,
+              opacity: ratio == null ? 0.46 : 1,
+              background: `linear-gradient(90deg, ${color}, rgba(255,255,255,0.78))`,
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StreamCompactPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "blue" | "gold";
+}) {
+  const color = tone === "blue" ? "var(--hud-blue)" : "var(--hud-gold)";
+  return (
+    <div style={streamCompactPillStyle}>
+      <span style={{ ...streamCompactLabelStyle, color }}>{label}</span>
+      <span style={streamCompactTextStyle} title={value}>{value}</span>
+    </div>
+  );
+}
+
+function getTickProgressRatio(progress: TickProgressInfo | null): number | null {
+  if (!progress) return null;
+  if (progress.phase === "tick_persisted" || progress.phase === "world_state_update_done") {
+    return 100;
+  }
+  if (progress.total && progress.total > 0) {
+    return Math.max(0, Math.min(100, ((progress.current ?? 0) / progress.total) * 100));
+  }
+  return null;
+}
+
+function buildGenerationMeta(
+  progress: TickProgressInfo | null,
+  streamCount: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (!progress) return "";
+  const parts: string[] = [];
+  if (progress.streamId) {
+    parts.push(t("topbar.streamShortId", { id: shortStreamId(progress.streamId) }));
+  }
+  if (streamCount > 1) {
+    parts.push(t("topbar.streamQueued", { count: streamCount }));
+  }
+  if (progress.total && progress.total > 0) {
+    parts.push(`${progress.current ?? 0}/${progress.total}`);
+  }
+  return parts.join(" · ");
+}
+
+function shortStreamId(streamId: string): string {
+  const tail = streamId.split("-").slice(-1)[0] || streamId;
+  return tail.slice(0, 6);
+}
+
 // --- Styles ---
 
 const primaryBtnStyle: CSSProperties = {
@@ -603,6 +803,145 @@ const selectStyle: CSSProperties = {
   fontSize: 12,
   outline: "none",
   boxShadow: "2px 2px 0 rgba(0,0,0,0.25)",
+};
+
+function streamPanelStyle(collapsed: boolean): CSSProperties {
+  return {
+    display: "grid",
+    gap: collapsed ? 5 : 7,
+    padding: collapsed ? "5px 7px" : "7px 8px",
+    background: "rgba(0,0,0,0.28)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 3,
+  };
+}
+
+const streamPanelHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  minWidth: 0,
+  background: "transparent",
+  border: "none",
+  color: "inherit",
+  padding: 0,
+  cursor: "pointer",
+};
+
+const streamPanelTitleStyle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 900,
+  color: "var(--hud-dim)",
+  letterSpacing: 0,
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+};
+
+const streamPanelHintStyle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 900,
+  color: "rgba(255,255,255,0.56)",
+  whiteSpace: "nowrap",
+};
+
+const streamBarGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 8,
+};
+
+const streamStatusBarStyle: CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 5,
+  padding: "7px 8px",
+  background: "rgba(68,216,255,0.1)",
+  border: "1px solid rgba(68,216,255,0.24)",
+  borderRadius: 3,
+};
+
+const streamStatusHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  minWidth: 0,
+};
+
+const streamStatusLabelStyle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+};
+
+const streamStatusMetaStyle: CSSProperties = {
+  fontSize: 10,
+  color: "rgba(255,255,255,0.46)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const streamStatusBodyStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(80px, 1fr) minmax(70px, 28%)",
+  alignItems: "center",
+  gap: 8,
+  minWidth: 0,
+};
+
+const streamStatusTextStyle: CSSProperties = {
+  fontSize: 11,
+  color: "var(--hud-text)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  minWidth: 0,
+};
+
+const streamStatusTrackStyle: CSSProperties = {
+  height: 4,
+  background: "rgba(255,255,255,0.12)",
+  borderRadius: 1,
+  overflow: "hidden",
+};
+
+const streamStatusFillStyle: CSSProperties = {
+  height: "100%",
+  transition: "width 0.25s ease",
+};
+
+const streamCompactRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+  gap: 7,
+};
+
+const streamCompactPillStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 7,
+  minWidth: 0,
+  padding: "4px 7px",
+  background: "rgba(255,255,255,0.055)",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 3,
+};
+
+const streamCompactLabelStyle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+};
+
+const streamCompactTextStyle: CSSProperties = {
+  fontSize: 11,
+  color: "var(--hud-text)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  minWidth: 0,
 };
 
 function chipBtnStyle(active: boolean): CSSProperties {

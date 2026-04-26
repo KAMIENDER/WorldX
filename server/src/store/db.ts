@@ -59,10 +59,11 @@ CREATE TABLE IF NOT EXISTS character_states (
 	  emotion_arousal REAL DEFAULT 3,
 	  curiosity REAL DEFAULT 100,
 	  energy REAL DEFAULT 80,
-	  hunger REAL DEFAULT 20,
-	  stress REAL DEFAULT 20,
-	  money REAL DEFAULT 0,
-	  short_term_goal TEXT,
+		  hunger REAL DEFAULT 20,
+		  stress REAL DEFAULT 20,
+		  money REAL DEFAULT 0,
+		  carry_weight_kg REAL DEFAULT 0,
+		  short_term_goal TEXT,
 	  age_years INTEGER DEFAULT 30,
 	  age_days INTEGER DEFAULT 0,
 	  life_stage TEXT DEFAULT 'adult',
@@ -125,6 +126,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
 
 CREATE TABLE IF NOT EXISTS llm_call_logs (
   id TEXT PRIMARY KEY,
+  tick_run_id TEXT,
   task_type TEXT NOT NULL,
   character_id TEXT,
   model TEXT NOT NULL,
@@ -136,6 +138,42 @@ CREATE TABLE IF NOT EXISTS llm_call_logs (
   error TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS tick_runs (
+  id TEXT PRIMARY KEY,
+  stream_id TEXT,
+  timeline_id TEXT,
+  game_day INTEGER NOT NULL,
+  game_tick INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  critical_ended_at TEXT,
+  ended_at TEXT,
+  critical_path_ms INTEGER DEFAULT 0,
+  total_ms INTEGER DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'running',
+  event_count INTEGER DEFAULT 0,
+  error TEXT,
+  metadata TEXT DEFAULT '{}',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tick_runs_time ON tick_runs(game_day DESC, game_tick DESC, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tick_runs_stream ON tick_runs(stream_id);
+
+CREATE TABLE IF NOT EXISTS tick_phase_timings (
+  id TEXT PRIMARY KEY,
+  tick_run_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  phase TEXT NOT NULL,
+  label TEXT,
+  started_at TEXT NOT NULL,
+  ended_at TEXT NOT NULL,
+  elapsed_ms INTEGER DEFAULT 0,
+  duration_ms INTEGER DEFAULT 0,
+  metadata TEXT DEFAULT '{}',
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tick_run_id) REFERENCES tick_runs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_tick_phase_timings_run ON tick_phase_timings(tick_run_id, sequence);
 
 CREATE TABLE IF NOT EXISTS content_candidates (
   id TEXT PRIMARY KEY,
@@ -199,6 +237,7 @@ function runMigrations(database: Database.Database): void {
     ["hunger", `ALTER TABLE character_states ADD COLUMN hunger REAL DEFAULT 20`],
     ["stress", `ALTER TABLE character_states ADD COLUMN stress REAL DEFAULT 20`],
     ["money", `ALTER TABLE character_states ADD COLUMN money REAL DEFAULT 0`],
+    ["carry_weight_kg", `ALTER TABLE character_states ADD COLUMN carry_weight_kg REAL DEFAULT 0`],
     ["short_term_goal", `ALTER TABLE character_states ADD COLUMN short_term_goal TEXT DEFAULT NULL`],
     ["age_days", `ALTER TABLE character_states ADD COLUMN age_days INTEGER DEFAULT 0`],
     ["life_stage", `ALTER TABLE character_states ADD COLUMN life_stage TEXT DEFAULT 'adult'`],
@@ -208,12 +247,24 @@ function runMigrations(database: Database.Database): void {
     ["death_day", `ALTER TABLE character_states ADD COLUMN death_day INTEGER DEFAULT NULL`],
     ["death_tick", `ALTER TABLE character_states ADD COLUMN death_tick INTEGER DEFAULT NULL`],
     ["death_cause", `ALTER TABLE character_states ADD COLUMN death_cause TEXT DEFAULT NULL`],
+    ["daily_plan", `ALTER TABLE character_states ADD COLUMN daily_plan TEXT DEFAULT NULL`],
   ];
   for (const [column, sql] of migrations) {
     if (!characterStateColumns.has(column)) {
       database.exec(sql);
     }
   }
+
+  const llmLogColumns = new Set(
+    database
+      .prepare(`PRAGMA table_info(llm_call_logs)`)
+      .all()
+      .map((col: any) => col.name),
+  );
+  if (!llmLogColumns.has("tick_run_id")) {
+    database.exec(`ALTER TABLE llm_call_logs ADD COLUMN tick_run_id TEXT DEFAULT NULL`);
+  }
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_llm_call_logs_tick_run ON llm_call_logs(tick_run_id)`);
 }
 
 export function getDb(): Database.Database {

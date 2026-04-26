@@ -1,6 +1,7 @@
 import { getDb } from "../store/db.js";
 import { generateId } from "../utils/id-generator.js";
 import type { LLMCallLog } from "../types/index.js";
+import { getCurrentTickRunId } from "../store/tick-trace-store.js";
 
 const DEFAULT_INPUT_PRICE_PER_1K = 0.001;
 const DEFAULT_OUTPUT_PRICE_PER_1K = 0.002;
@@ -27,10 +28,11 @@ export function calculateCost(
 export function logCall(log: LLMCallLog): void {
   const db = getDb();
   db.prepare(
-    `INSERT INTO llm_call_logs (id, task_type, character_id, model, prompt_tokens, completion_tokens, cost, duration_ms, success, error, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    `INSERT INTO llm_call_logs (id, tick_run_id, task_type, character_id, model, prompt_tokens, completion_tokens, cost, duration_ms, success, error, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
   ).run(
     log.id || generateId(),
+    log.tickRunId ?? getCurrentTickRunId() ?? null,
     log.taskType,
     log.characterId ?? null,
     log.model,

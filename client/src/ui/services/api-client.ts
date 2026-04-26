@@ -69,6 +69,19 @@ export interface WorldInfo {
   sceneConfig: SceneConfigInfo;
   sceneRuntime: SceneRuntimeInfo;
   mainAreaPoints?: MainAreaPointInfo[];
+  worldSize?: {
+    width: number;
+    height: number;
+    tileSize?: number;
+    gridWidth?: number;
+    gridHeight?: number;
+    metersPerTile?: number;
+  } | null;
+  movementConfig?: {
+    defaultWalkSpeedMetersPerMinute: number;
+    minMoveMinutes: number;
+    maxMoveTicks: number | null;
+  };
   timelineTickCount?: number;
 }
 
@@ -117,6 +130,25 @@ export interface CreateJobSnapshot {
   error: string | null;
 }
 
+export interface TickProgressInfo {
+  streamId?: string;
+  phase: string;
+  label: string;
+  at: number;
+  gameTime?: GameTime;
+  events?: SimulationEvent[];
+  characterId?: string;
+  characterName?: string;
+  current?: number;
+  total?: number;
+  eventCount?: number;
+}
+
+export interface SimulationConfigInfo {
+  prefetchTicks: number;
+  maxQueuedTicks: number;
+}
+
 export class JobConflictError extends Error {
   activeJobId: string;
   constructor(message: string, activeJobId: string) {
@@ -129,6 +161,10 @@ export class JobConflictError extends Error {
 export const apiClient = {
   getWorldTime(): Promise<WorldTimeInfo> {
     return fetchJSON("/world/time");
+  },
+
+  getSimulationConfig(): Promise<SimulationConfigInfo> {
+    return fetchJSON("/simulation/config");
   },
 
   getWorldInfo(): Promise<WorldInfo> {
@@ -194,13 +230,13 @@ export const apiClient = {
     return fetchJSON(`/events/highlights?minScore=${minScore}&limit=${limit}`);
   },
 
-  simulateTick(): Promise<{
+  simulateTick(params?: { streamId?: string }): Promise<{
     ok: boolean;
     gameTime: WorldTimeInfo;
     eventCount: number;
     events: SimulationEvent[];
   }> {
-    return postJSON("/simulation/tick");
+    return postJSON("/simulation/tick", params);
   },
 
   simulateDay(): Promise<{ ok: boolean; gameTime: WorldTimeInfo; eventCount: number }> {
@@ -295,7 +331,7 @@ export const apiClient = {
 
   patchCharacterRuntimeState(
     id: string,
-    patch: { mainAreaPointId?: string | null },
+    patch: { mainAreaPointId?: string | null; carryWeightKg?: number },
   ): Promise<{ ok: boolean; state: Record<string, unknown> }> {
     return patchJSON(`/characters/${id}/runtime-state`, patch);
   },

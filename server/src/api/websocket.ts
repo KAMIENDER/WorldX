@@ -31,6 +31,13 @@ export function setupWebSocket(server: HttpServer, ctx: AppContext): WebSocketSe
     }
   });
 
+  ctx.eventBus.on("tick_progress", (payload) => {
+    broadcast({
+      type: "tick_progress",
+      data: payload,
+    });
+  });
+
   ctx.eventBus.on("simulation_status", (payload) => {
     broadcast({
       type: "simulation_status",

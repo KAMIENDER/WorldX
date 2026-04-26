@@ -192,6 +192,9 @@ export function CharacterDetail({
 	        <div>
 	          {t("charDetail.age")}: {state.ageYears}{t("charDetail.ageSuffix")} · {t("charDetail.lifeStage")}: {state.lifeStageLabel || formatLifeStage(state.lifeStage)} · {t("charDetail.body")}: {state.bodyConditionLabel || formatBodyCondition(state.bodyCondition)} · {t("charDetail.health")}: {Math.round(state.health)}/100
 	        </div>
+	        <div>
+	          {t("charDetail.carryWeight")}: {Math.round((state.carryWeightKg ?? 0) * 10) / 10}kg
+	        </div>
 	      </div>
 
       <div style={lifeGridStyle}>

@@ -28,6 +28,13 @@ export interface WorldSizeConfig {
   tileSize?: number;
   gridWidth?: number;
   gridHeight?: number;
+  metersPerTile?: number;
+}
+
+export interface MovementConfig {
+  defaultWalkSpeedMetersPerMinute: number;
+  minMoveMinutes: number;
+  maxMoveTicks: number | null;
 }
 
 /** 区域配置（来自 world.json） */
@@ -116,4 +123,5 @@ export interface WorldConfig {
   locations: LocationConfig[];
   mainAreaPoints?: MainAreaPointConfig[];
   worldSize?: WorldSizeConfig;
+  movement?: Partial<MovementConfig>;
 }
