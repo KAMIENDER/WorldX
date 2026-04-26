@@ -236,9 +236,10 @@ router.get("/runtime-state", (_req, res) => {
     globalStates: wm.getAllGlobalState().map((entry) => ({
       ...entry,
       isSystem:
-        entry.key === "current_day" ||
-        entry.key === "current_tick" ||
-        entry.key.startsWith("dialogue_session:"),
+          entry.key === "current_day" ||
+          entry.key === "current_tick" ||
+          entry.key === "current_day_start_time" ||
+          entry.key.startsWith("dialogue_session:"),
     })),
     recentWorldStateChanges,
   });

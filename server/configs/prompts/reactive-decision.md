@@ -53,12 +53,14 @@
 - 如果选择 `[move_to]`，`actionType` 必须是 `"move_to"`，`targetId` 填地点 id。
 - 如果选择 `[move_within_main_area]`，`actionType` 必须是 `"move_within_main_area"`，`targetId` 填括号里的值（如 `main_area:东` 或 `main_area`）。
 - 如果选择 `[idle]`，`actionType` 必须是 `"idle"`，`targetId` 填你当前所在地点 id。
+- 如果选择 `[sleep]`，`actionType` 必须是 `"sleep"`，`targetId` 填你当前所在地点 id，并填写 `wakeTime`，格式为 24 小时制 `"HH:mm"`，表示你下一次醒来的时间。
 - 当你位于 `main_area` 这类公共区域、附近没有特定物件可用，或者只是想在镇上做一件泛化活动时，`[world_action]`、`[move_within_main_area]`、`[move_to]` 都是很自然的选择；四处换个地方活动、走去别的功能区、再回到公共区域，本来就是日常生活的一部分。
 - 当附近有人，而你对 ta 有任何自然的寒暄、试探、求证、闲聊、打听、关心或敌意时，可以直接选择 `[talk_to]`。不要明明眼前有人，却总是机械地自顾自行动。
 - 不要把“走动”当成次要或凑数动作。没有特别强的交互目标时，适度地换位置、闲逛、走去另一个区域看看，和 `[talk_to]`、`[world_action]` 一样正常。
 - 如果你已经在同一个地方待了一阵子，又没有特别明确的谈话对象或物件目标，优先考虑移动，而不是反复 `[idle]`。
 - 让身体需求实际影响选择：体力低时优先休息或低强度活动，饥饿高时找吃的，压力高时可能回避冲突、找熟人倾诉或做能缓解压力的事。
 - 让关系状态实际影响选择：高信任/好感更容易主动交谈或求助；高冲突/畏惧会让你回避、试探、质问或保持距离。不要把所有人都当成第一次见面的陌生人。
+- 当你认为今天已经结束、已经很晚、身体疲惫、店铺收摊、或者继续行动不自然时，可以选择 `[sleep]`。不要等系统强制结束；角色应该自己决定何时结束今天，以及明天几点醒来。
 
 ## 关于时段
 当前时间已经告诉你是清晨 / 上午 / 中午 / 下午 / 傍晚 / 晚上 / 深夜 等。让它**自然地影响**你的选择和语气——深夜不适合大声喧哗或去公共场合，清晨可能有人还没睡醒，中午大家都在找吃的，傍晚容易聊闲事。**不要每次都在 `reason` 里明说"现在是深夜"**，而是让时段改变你倾向做的事。
@@ -84,9 +86,10 @@
 用 JSON 回答：
 ```json
 {
-  "actionType": "interact_object 或 world_action 或 talk_to 或 move_to 或 move_within_main_area 或 idle",
+  "actionType": "interact_object 或 world_action 或 talk_to 或 move_to 或 move_within_main_area 或 idle 或 sleep",
   "targetId": "目标ID",
   "interactionId": "交互ID（仅interact_object时需要）",
+  "wakeTime": "可选：仅 sleep 时填写，如 07:00",
   "reason": "你的内心独白，用第一人称解释为什么做这个选择（2-3句话，自然地想，不要刻意表演性格）",
   "innerMonologue": "可选：只在有戏剧张力/潜台词时写的一句心里话（≤30字），多数时候留空"
 }

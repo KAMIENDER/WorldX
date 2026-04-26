@@ -55,27 +55,28 @@ CREATE TABLE IF NOT EXISTS character_states (
   current_action_target TEXT,
   action_start_tick INTEGER DEFAULT 0,
   action_end_tick INTEGER DEFAULT 0,
+  sleep_wake_time TEXT,
   emotion_valence REAL DEFAULT 0,
-	  emotion_arousal REAL DEFAULT 3,
-	  curiosity REAL DEFAULT 100,
-	  energy REAL DEFAULT 80,
-		  hunger REAL DEFAULT 20,
-		  stress REAL DEFAULT 20,
-		  money REAL DEFAULT 0,
-		  carry_weight_kg REAL DEFAULT 0,
-		  short_term_goal TEXT,
-	  age_years INTEGER DEFAULT 30,
-	  age_days INTEGER DEFAULT 0,
-	  life_stage TEXT DEFAULT 'adult',
-	  health REAL DEFAULT 100,
-	  body_condition TEXT DEFAULT 'healthy',
-	  is_alive INTEGER DEFAULT 1,
-	  death_day INTEGER,
-	  death_tick INTEGER,
-	  death_cause TEXT,
-	  daily_plan TEXT,
-	  updated_at TEXT DEFAULT (datetime('now'))
-	);
+  emotion_arousal REAL DEFAULT 3,
+  curiosity REAL DEFAULT 100,
+  energy REAL DEFAULT 80,
+  hunger REAL DEFAULT 20,
+  stress REAL DEFAULT 20,
+  money REAL DEFAULT 0,
+  carry_weight_kg REAL DEFAULT 0,
+  short_term_goal TEXT,
+  age_years INTEGER DEFAULT 30,
+  age_days INTEGER DEFAULT 0,
+  life_stage TEXT DEFAULT 'adult',
+  health REAL DEFAULT 100,
+  body_condition TEXT DEFAULT 'healthy',
+  is_alive INTEGER DEFAULT 1,
+  death_day INTEGER,
+  death_tick INTEGER,
+  death_cause TEXT,
+  daily_plan TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 
 CREATE TABLE IF NOT EXISTS character_relationships (
   source_character_id TEXT NOT NULL,
@@ -248,6 +249,7 @@ function runMigrations(database: Database.Database): void {
     ["death_tick", `ALTER TABLE character_states ADD COLUMN death_tick INTEGER DEFAULT NULL`],
     ["death_cause", `ALTER TABLE character_states ADD COLUMN death_cause TEXT DEFAULT NULL`],
     ["daily_plan", `ALTER TABLE character_states ADD COLUMN daily_plan TEXT DEFAULT NULL`],
+    ["sleep_wake_time", `ALTER TABLE character_states ADD COLUMN sleep_wake_time TEXT DEFAULT NULL`],
   ];
   for (const [column, sql] of migrations) {
     if (!characterStateColumns.has(column)) {

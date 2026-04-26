@@ -92,6 +92,7 @@ export interface CharacterState {
   currentActionTarget: string | null;
   actionStartTick: number;
   actionEndTick: number;
+  sleepWakeTime: string | null;
 
   emotionValence: number;
   emotionArousal: number;

@@ -20,6 +20,7 @@ type DialoguePlaybackTurn = {
 type DialoguePlaybackLane = {
   queue: DialoguePlaybackTurn[];
   timer: Phaser.Time.TimerEvent | null;
+  closed: boolean;
 };
 
 // Frontend-only dialogue playback tuning. Search these names to adjust pacing.
@@ -164,6 +165,7 @@ export class WorldScene extends Phaser.Scene {
     };
     const onTickPlaybackEventsFlushed = () => {
       this.tickPlaybackEventsFlushed = true;
+      this.releaseActiveDialogueLaneIfIdle();
       this.scheduleTickPlaybackCompletionCheck();
     };
     const onToggleWalkableOverlay = (visible: boolean) => {
@@ -552,6 +554,7 @@ export class WorldScene extends Phaser.Scene {
     if (dialogue.phase === "turn" && dialogue.turns?.length) {
       const laneKey = this.getDialogueLaneKey(dialogue);
       const lane = this.getOrCreateDialoguePlaybackLane(laneKey);
+      lane.closed = false;
       dialogue.turns.forEach((turn) => {
         lane.queue.push({
           speaker: turn.speaker,
@@ -562,6 +565,10 @@ export class WorldScene extends Phaser.Scene {
       });
       this.playNextDialogueTurn(laneKey);
     } else if (dialogue.phase === "complete" && dialogue.participants?.length) {
+      const laneKey = this.getDialogueLaneKey(dialogue);
+      const lane = this.getOrCreateDialoguePlaybackLane(laneKey);
+      lane.closed = true;
+      this.releaseDialogueLaneIfReady(laneKey, lane);
       this.pendingDialogueCleanupTimers += 1;
       this.time.delayedCall(1200, () => {
         for (const participantId of dialogue.participants || []) {
@@ -596,7 +603,7 @@ export class WorldScene extends Phaser.Scene {
   private getOrCreateDialoguePlaybackLane(laneKey: string): DialoguePlaybackLane {
     let lane = this.dialoguePlaybackLanes.get(laneKey);
     if (!lane) {
-      lane = { queue: [], timer: null };
+      lane = { queue: [], timer: null, closed: false };
       this.dialoguePlaybackLanes.set(laneKey, lane);
     }
     return lane;
@@ -613,11 +620,7 @@ export class WorldScene extends Phaser.Scene {
     }
     if (lane.timer || lane.queue.length === 0) {
       if (!lane.timer && lane.queue.length === 0) {
-        this.dialoguePlaybackLanes.delete(laneKey);
-        if (this.activeDialogueLaneKey === laneKey) {
-          this.activeDialogueLaneKey = null;
-          this.pumpDialoguePlayback();
-        }
+        this.releaseDialogueLaneIfReady(laneKey, lane);
         this.scheduleTickPlaybackCompletionCheck();
       }
       return;
@@ -662,11 +665,7 @@ export class WorldScene extends Phaser.Scene {
       () => {
         lane.timer = null;
         if (lane.queue.length === 0) {
-          this.dialoguePlaybackLanes.delete(laneKey);
-          if (this.activeDialogueLaneKey === laneKey) {
-            this.activeDialogueLaneKey = null;
-          }
-          this.pumpDialoguePlayback();
+          this.releaseDialogueLaneIfReady(laneKey, lane);
           this.scheduleTickPlaybackCompletionCheck();
           return;
         }
@@ -684,6 +683,30 @@ export class WorldScene extends Phaser.Scene {
       }
     }
     this.scheduleTickPlaybackCompletionCheck();
+  }
+
+  private releaseDialogueLaneIfReady(laneKey: string, lane: DialoguePlaybackLane): boolean {
+    if (lane.timer || lane.queue.length > 0) return false;
+    if (!lane.closed && !this.tickPlaybackEventsFlushed) return false;
+
+    this.dialoguePlaybackLanes.delete(laneKey);
+    if (this.activeDialogueLaneKey === laneKey) {
+      this.activeDialogueLaneKey = null;
+      this.pumpDialoguePlayback();
+    }
+    return true;
+  }
+
+  private releaseActiveDialogueLaneIfIdle(): void {
+    const laneKey = this.activeDialogueLaneKey;
+    if (!laneKey) return;
+    const lane = this.dialoguePlaybackLanes.get(laneKey);
+    if (!lane) {
+      this.activeDialogueLaneKey = null;
+      this.pumpDialoguePlayback();
+      return;
+    }
+    this.releaseDialogueLaneIfReady(laneKey, lane);
   }
 
   private maybeShowActionMonologue(event: SimulationEvent): void {

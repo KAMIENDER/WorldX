@@ -114,9 +114,10 @@ export interface Perception {
 
 /** AI 决策输出 */
 export interface ActionDecision {
-  actionType: "interact_object" | "world_action" | "talk_to" | "move_to" | "move_within_main_area" | "idle";
+  actionType: "interact_object" | "world_action" | "talk_to" | "move_to" | "move_within_main_area" | "idle" | "sleep";
   targetId: string;
   interactionId?: string;
+  wakeTime?: string;
   reason: string;
   innerMonologue?: string;
 }

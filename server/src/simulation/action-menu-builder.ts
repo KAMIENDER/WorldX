@@ -109,6 +109,7 @@ export function buildActionMenu(
       const otherState = characterManager.getState(c.id);
       if (!isLegalDirectTalkTarget(state.location, otherState.location)) continue;
       if (otherState.currentAction === "in_conversation") continue;
+      if (otherState.currentAction === "sleep") continue;
       const actionStr = c.currentAction ? `正在${c.currentAction}` : "空闲";
       const anchorServices = anchorInteractionsByChar.get(c.id);
       const serviceHint = anchorServices
@@ -129,6 +130,7 @@ export function buildActionMenu(
       const ancState = characterManager.getState(ancCharId);
       if (!isLegalDirectTalkTarget(state.location, ancState.location)) continue;
       if (ancState.currentAction === "in_conversation") continue;
+      if (ancState.currentAction === "sleep") continue;
       const actionStr = ancState.currentAction ? `正在${ancState.currentAction}` : "空闲";
       charLines.push(
         `${idx}. [talk_to] ${ancProfile.name}(${ancProfile.role}, ${ancCharId}) — ${actionStr} [可交互：${services.join("、")}]`,
@@ -149,6 +151,7 @@ export function buildActionMenu(
       const otherState = characterManager.getState(c.id);
       if (!isLegalDirectTalkTarget(state.location, otherState.location)) continue;
       if (otherState.currentAction === "in_conversation") continue;
+      if (otherState.currentAction === "sleep") continue;
       const actionStr = c.currentAction ? `正在${c.currentAction}` : "空闲";
       const anchorServices = anchorInteractionsByChar.get(c.id);
       const serviceHint = anchorServices
@@ -201,6 +204,8 @@ export function buildActionMenu(
 
   lines.push("【其他】");
   lines.push(`${idx}. [idle] 原地发呆/思考`);
+  idx++;
+  lines.push(`${idx}. [sleep] 结束今天并休息到一个具体醒来时间（targetId 填当前位置，必须输出 wakeTime，格式 HH:mm）`);
 
   return lines.join("\n");
 }

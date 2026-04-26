@@ -29,6 +29,8 @@ import * as memoryStore from "../store/memory-store.js";
 import {
   absoluteTick,
   getBatchTicksForOneCycle,
+  minutesUntilClockTime,
+  normalizeClockTime,
   tickToSceneTimeWithPeriod,
 } from "../utils/time-helpers.js";
 import { generateId } from "../utils/id-generator.js";
@@ -212,12 +214,15 @@ export class SimulationEngine {
       });
 
       if (didAdvanceDay) {
-        events.push(...await this.runCycleTransition(previousTime));
+        events.push(...await this.runCycleTransition(previousTime, {
+          nextDay: gameTime.day,
+          reason: "hard_limit",
+        }));
         const finalized = this.finalizeTickEvents(events);
         this.emitTickProgress(options, {
           phase: "tick_persisted",
           label: `场景切换完成，写入 ${finalized.length} 个事件`,
-          gameTime,
+          gameTime: this.worldManager.getCurrentTime(),
           eventCount: finalized.length,
         });
         finishTickRunCritical(traceRunId, {
@@ -333,6 +338,28 @@ export class SimulationEngine {
         } else {
           console.error("[SimEngine] Dialogue session error:", result.reason);
         }
+      }
+
+      const sleepTransition = this.getSleepDrivenDayTransition(gameTime);
+      if (sleepTransition) {
+        events.push(...await this.runCycleTransition(gameTime, {
+          nextDay: gameTime.day + 1,
+          nextDayStartTime: sleepTransition.nextDayStartTime,
+          reason: "all_sleeping",
+        }));
+        const finalized = this.finalizeTickEvents(events);
+        const nextTime = this.worldManager.getCurrentTime();
+        this.emitTickProgress(options, {
+          phase: "tick_persisted",
+          label: `所有角色已结束今天，切到第 ${nextTime.day} 天 ${sleepTransition.nextDayStartTime}`,
+          gameTime: nextTime,
+          eventCount: finalized.length,
+        });
+        finishTickRunCritical(traceRunId, {
+          eventCount: finalized.length,
+          hasBackgroundWork: false,
+        });
+        return finalized;
       }
 
       if (this.shouldRunMicroReflectionWave(gameTime)) {
@@ -487,6 +514,11 @@ export class SimulationEngine {
 
   private async runCycleTransition(
     cycleEndTime: GameTime,
+    options: {
+      nextDay?: number;
+      nextDayStartTime?: string;
+      reason?: "hard_limit" | "all_sleeping";
+    } = {},
   ): Promise<SimulationEvent[]> {
     const events: SimulationEvent[] = [];
 
@@ -499,11 +531,70 @@ export class SimulationEngine {
 
     events.push(...this.runEndOfDayDecay(cycleEndTime));
 
-    this.worldManager.createSnapshot(`Day ${cycleEndTime.day} ended`);
+    const nextDay = options.nextDay ?? cycleEndTime.day + 1;
+    const sceneConfig = this.worldManager.getSceneConfig();
+    const nextDayStartTime = normalizeClockTime(
+      options.nextDayStartTime ?? sceneConfig.multiDay.nextDayStartTime,
+      sceneConfig.startTime,
+    );
+    events.push(this.buildDayTransitionEvent(
+      cycleEndTime,
+      nextDay,
+      nextDayStartTime,
+      options.reason ?? "hard_limit",
+    ));
+    this.worldManager.startNewDay(nextDay, nextDayStartTime);
     this.worldManager.resetTransientStateForNewScene();
-    this.characterManager.resetStatesForNewScene();
+    events.push(...this.characterManager.resetStatesForNewDay(nextDay));
+    this.worldManager.createSnapshot(`Day ${cycleEndTime.day} ended`);
     this.scheduleDailySummary(cycleEndTime.day);
     return events;
+  }
+
+  private getSleepDrivenDayTransition(gameTime: GameTime): { nextDayStartTime: string } | null {
+    const aliveProfiles = this.characterManager.getAliveProfiles();
+    if (aliveProfiles.length === 0) return null;
+
+    const sleepStates = aliveProfiles.map((profile) => this.characterManager.getState(profile.id));
+    if (!sleepStates.every((state) => state.currentAction === "sleep" && state.sleepWakeTime)) {
+      return null;
+    }
+
+    const sceneConfig = this.worldManager.getSceneConfig();
+    let bestTime = sleepStates[0].sleepWakeTime!;
+    let bestDelta = minutesUntilClockTime(bestTime, gameTime.tick, sceneConfig);
+    for (const state of sleepStates.slice(1)) {
+      const wakeTime = state.sleepWakeTime!;
+      const delta = minutesUntilClockTime(wakeTime, gameTime.tick, sceneConfig);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestTime = wakeTime;
+      }
+    }
+
+    return { nextDayStartTime: normalizeClockTime(bestTime, sceneConfig.startTime) };
+  }
+
+  private buildDayTransitionEvent(
+    cycleEndTime: GameTime,
+    nextDay: number,
+    nextDayStartTime: string,
+    reason: "hard_limit" | "all_sleeping",
+  ): SimulationEvent {
+    return {
+      id: generateId(),
+      gameDay: cycleEndTime.day,
+      gameTick: cycleEndTime.tick,
+      type: "event_triggered",
+      location: "world",
+      data: {
+        eventType: "day_transition",
+        reason,
+        nextDay,
+        nextDayStartTime,
+      },
+      tags: ["day_transition", reason],
+    };
   }
 
   private async flushPendingMemoryEvaluation(): Promise<void> {
@@ -823,6 +914,7 @@ export class SimulationEngine {
           currentActionTarget: null,
           actionStartTick: 0,
           actionEndTick: 0,
+          sleepWakeTime: null,
         });
       }
     }
@@ -901,6 +993,7 @@ export class SimulationEngine {
     }
     return (
       !stateA.currentAction &&
+      stateB.currentAction !== "sleep" &&
       stateB.currentAction !== "in_conversation" &&
       this.areStatesDialogueCompatible(stateA, stateB)
     );
@@ -972,12 +1065,14 @@ export class SimulationEngine {
       currentActionTarget: responderId,
       actionStartTick: absNow,
       actionEndTick: 0,
+      sleepWakeTime: null,
     });
     this.characterManager.updateState(responderId, {
       currentAction: "in_conversation",
       currentActionTarget: initiatorId,
       actionStartTick: absNow,
       actionEndTick: 0,
+      sleepWakeTime: null,
     });
     return session;
   }
@@ -998,6 +1093,7 @@ export class SimulationEngine {
       currentActionTarget: null,
       actionStartTick: 0,
       actionEndTick: 0,
+      sleepWakeTime: null,
     });
   }
 
@@ -1159,6 +1255,8 @@ export class SimulationEngine {
         return `进行 ${decision.targetId}`;
       case "idle":
         return "短暂停留";
+      case "sleep":
+        return `休息到 ${decision.wakeTime ?? "稍后"}`;
     }
   }
 
@@ -1173,6 +1271,7 @@ export class SimulationEngine {
           currentActionTarget: null,
           actionStartTick: 0,
           actionEndTick: 0,
+          sleepWakeTime: null,
         });
       } catch {
         // Best-effort cleanup only. If state is already missing, dropping the
@@ -1191,6 +1290,7 @@ export class SimulationEngine {
         currentActionTarget: null,
         actionStartTick: absNow,
         actionEndTick: absNow + idleDuration,
+        sleepWakeTime: null,
       });
     }
   }

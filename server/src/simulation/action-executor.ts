@@ -8,7 +8,11 @@ import type {
 import type { WorldManager, MainAreaZone } from "../core/world-manager.js";
 import type { CharacterManager } from "../core/character-manager.js";
 import { generateId } from "../utils/id-generator.js";
-import { absoluteTick } from "../utils/time-helpers.js";
+import {
+  absoluteTick,
+  minutesUntilClockTime,
+  normalizeClockTime,
+} from "../utils/time-helpers.js";
 import { getDurationMinutes, getDurationTicks } from "../utils/duration.js";
 import { updateEmotion } from "../core/emotion-manager.js";
 
@@ -85,6 +89,7 @@ export function executeAction(
         currentActionTarget: decision.targetId,
         actionStartTick: absNow,
         actionEndTick: absNow + durationTicks,
+        sleepWakeTime: null,
       });
 
       events.push({
@@ -126,6 +131,7 @@ export function executeAction(
         currentActionTarget: `${WORLD_ACTION_TARGET_PREFIX}${action.id}`,
         actionStartTick: absNow,
         actionEndTick: absNow + durationTicks,
+        sleepWakeTime: null,
       });
 
       events.push({
@@ -217,6 +223,7 @@ export function executeAction(
         currentActionTarget: null,
         actionStartTick: absNow,
         actionEndTick: absNow + movementEstimate.durationTicks,
+        sleepWakeTime: null,
       });
 
       events.push({
@@ -290,6 +297,7 @@ export function executeAction(
         currentActionTarget: null,
         actionStartTick: absNow,
         actionEndTick: absNow + movementEstimate.durationTicks,
+        sleepWakeTime: null,
       });
 
       events.push({
@@ -326,6 +334,7 @@ export function executeAction(
         currentActionTarget: null,
         actionStartTick: absNow,
         actionEndTick: absNow + idleDuration,
+        sleepWakeTime: null,
       });
 
       events.push({
@@ -342,6 +351,43 @@ export function executeAction(
         },
         innerMonologue,
         tags: ["idle"],
+      });
+      break;
+    }
+
+    case "sleep": {
+      const sceneConfig = worldManager.getSceneConfig();
+      const wakeTime = normalizeClockTime(decision.wakeTime, "07:00");
+      const durationMinutes = minutesUntilClockTime(wakeTime, gameTime.tick, sceneConfig);
+      const durationTicks = Math.max(
+        1,
+        Math.ceil(durationMinutes / sceneConfig.tickDurationMinutes),
+      );
+      characterManager.updateState(charId, {
+        currentAction: "sleep",
+        currentActionTarget: null,
+        actionStartTick: absNow,
+        actionEndTick: absNow + durationTicks,
+        sleepWakeTime: wakeTime,
+      });
+
+      events.push({
+        id: generateId(),
+        gameDay: gameTime.day,
+        gameTick: gameTime.tick,
+        type: "action_start",
+        actorId: charId,
+        location: state.location,
+        data: {
+          actionType: "sleep",
+          actionName: "睡觉",
+          wakeTime,
+          duration: durationTicks,
+          durationMinutes,
+          reason: decision.reason,
+        },
+        innerMonologue,
+        tags: ["sleep", "end_day"],
       });
       break;
     }
@@ -364,6 +410,36 @@ export function completeAction(
 
   const actionName = state.currentAction;
   const targetId = state.currentActionTarget;
+
+  if (actionName === "sleep") {
+    const wakeTime = state.sleepWakeTime;
+    characterManager.updateState(charId, {
+      currentAction: null,
+      currentActionTarget: null,
+      actionStartTick: 0,
+      actionEndTick: 0,
+      sleepWakeTime: null,
+      energy: clamp(state.energy + 18, 0, 100),
+      hunger: clamp(state.hunger + 6, 0, 100),
+      stress: clamp(state.stress - 8, 0, 100),
+    });
+
+    events.push({
+      id: generateId(),
+      gameDay: gameTime.day,
+      gameTick: gameTime.tick,
+      type: "action_end",
+      actorId: charId,
+      location: state.location,
+      data: {
+        action: "sleep",
+        actionName: "醒来",
+        wakeTime,
+      },
+      tags: ["sleep", "wake"],
+    });
+    return events;
+  }
 
   // Apply object interaction effects
   if (targetId?.startsWith(WORLD_ACTION_TARGET_PREFIX)) {
@@ -405,6 +481,7 @@ export function completeAction(
         currentActionTarget: null,
         actionStartTick: 0,
         actionEndTick: 0,
+        sleepWakeTime: null,
       });
       return events;
     }
@@ -452,6 +529,7 @@ export function completeAction(
         currentActionTarget: null,
         actionStartTick: 0,
         actionEndTick: 0,
+        sleepWakeTime: null,
       });
       return events;
     }
@@ -462,6 +540,7 @@ export function completeAction(
     currentActionTarget: null,
     actionStartTick: 0,
     actionEndTick: 0,
+    sleepWakeTime: null,
   });
 
   events.push({

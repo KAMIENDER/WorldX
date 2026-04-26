@@ -36,15 +36,15 @@ export function buildPerception(
     };
   });
 
-	  const charsAtLoc =
-	    state.location === "main_area"
-	      ? characterManager.getAllStates()
-	          .filter((s) => s.isAlive)
-	          .map((s) => ({
-	            profile: characterManager.getProfile(s.characterId),
-	            state: s,
-	          }))
-	      : characterManager.getCharactersAtLocation(state.location);
+  const charsAtLoc =
+    state.location === "main_area"
+      ? characterManager.getAllStates()
+          .filter((s) => s.isAlive)
+          .map((s) => ({
+            profile: characterManager.getProfile(s.characterId),
+            state: s,
+          }))
+      : characterManager.getCharactersAtLocation(state.location);
   const hasZones = worldManager.getAvailableMainAreaZones().length > 1;
   const charactersHere = charsAtLoc
     .filter((c) => c.profile.id !== charId)
@@ -60,9 +60,9 @@ export function buildPerception(
       return {
         id: c.profile.id,
         name: c.profile.name,
-	        currentAction: c.state.currentAction,
-	        bodyCondition: c.state.bodyCondition,
-	        appearanceHint: c.profile.appearanceHint,
+        currentAction: c.state.currentAction,
+        bodyCondition: c.state.bodyCondition,
+        appearanceHint: c.profile.appearanceHint,
         locationId: c.state.location,
         locationName: targetLocation,
         emotionLabel: visiblyEmotional
@@ -163,6 +163,8 @@ function getRecentActionDescriptions(
         descriptions.push("在主区域换了个位置");
       } else if (d?.actionType === "idle") {
         descriptions.push("发呆/思考");
+      } else if (d?.actionType === "sleep") {
+        descriptions.push(`睡觉到${d.wakeTime ?? "稍后"}`);
       }
     } else if (e.type === "movement") {
       descriptions.push(`前往${e.data?.to ?? e.location}`);

@@ -9,9 +9,11 @@ export const ActionDecisionSchema = z.object({
     "move_to",
     "move_within_main_area",
     "idle",
+    "sleep",
   ]),
   targetId: z.string(),
   interactionId: z.string().optional(),
+  wakeTime: z.string().regex(/^\d{1,2}:\d{2}$/).optional(),
   reason: z.string().min(5),
   innerMonologue: z.string().optional(),
 });

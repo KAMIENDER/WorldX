@@ -28,6 +28,7 @@ function rowToState(row: any): CharacterState {
     currentActionTarget: row.current_action_target ?? null,
     actionStartTick: row.action_start_tick,
     actionEndTick: row.action_end_tick,
+    sleepWakeTime: row.sleep_wake_time ?? null,
     emotionValence: row.emotion_valence,
     emotionArousal: row.emotion_arousal,
     curiosity: row.curiosity,
@@ -53,42 +54,43 @@ function rowToState(row: any): CharacterState {
 export function initCharacterState(state: CharacterState): void {
   getDb()
     .prepare(
-	      `INSERT OR IGNORE INTO character_states
-	       (character_id, location, main_area_point_id, current_action, current_action_target,
-	        action_start_tick, action_end_tick, emotion_valence, emotion_arousal,
-	        curiosity, energy, hunger, stress, money, carry_weight_kg, short_term_goal,
-	        age_years, age_days, life_stage, health, body_condition, is_alive,
-	        death_day, death_tick, death_cause, daily_plan)
-		       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	    )
-	    .run(
-	      state.characterId,
+      `INSERT OR IGNORE INTO character_states
+       (character_id, location, main_area_point_id, current_action, current_action_target,
+        action_start_tick, action_end_tick, sleep_wake_time, emotion_valence, emotion_arousal,
+        curiosity, energy, hunger, stress, money, carry_weight_kg, short_term_goal,
+        age_years, age_days, life_stage, health, body_condition, is_alive,
+        death_day, death_tick, death_cause, daily_plan)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      state.characterId,
       state.location,
       state.mainAreaPointId,
       state.currentAction,
       state.currentActionTarget,
       state.actionStartTick,
       state.actionEndTick,
-	      state.emotionValence,
-	      state.emotionArousal,
-	      state.curiosity,
-	      state.energy,
-	      state.hunger,
+      state.sleepWakeTime,
+      state.emotionValence,
+      state.emotionArousal,
+      state.curiosity,
+      state.energy,
+      state.hunger,
       state.stress,
       state.money,
       state.carryWeightKg,
       state.shortTermGoal,
-	      state.ageYears,
-	      state.ageDays,
-	      state.lifeStage,
-	      state.health,
-	      state.bodyCondition,
-	      state.isAlive ? 1 : 0,
-	      state.deathDay,
-	      state.deathTick,
-	      state.deathCause,
-	      state.dailyPlan,
-	    );
+      state.ageYears,
+      state.ageDays,
+      state.lifeStage,
+      state.health,
+      state.bodyCondition,
+      state.isAlive ? 1 : 0,
+      state.deathDay,
+      state.deathTick,
+      state.deathCause,
+      state.dailyPlan,
+    );
 }
 
 export function getCharacterState(id: string): CharacterState {
@@ -130,6 +132,10 @@ export function updateCharacterState(id: string, patch: Partial<CharacterState>)
   if (patch.actionEndTick !== undefined) {
     sets.push("action_end_tick = ?");
     params.push(patch.actionEndTick);
+  }
+  if (patch.sleepWakeTime !== undefined) {
+    sets.push("sleep_wake_time = ?");
+    params.push(patch.sleepWakeTime);
   }
   if (patch.emotionValence !== undefined) {
     sets.push("emotion_valence = ?");

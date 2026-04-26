@@ -50,6 +50,7 @@ export interface CharacterInfo {
   emotion: string;
   currentAction: string | null;
   currentActionLabel?: string | null;
+  sleepWakeTime?: string | null;
   anchor?: { type: "region" | "element"; targetId: string } | null;
   socialClass?: string;
   occupation?: string;
@@ -81,32 +82,33 @@ export interface CharacterProfile {
 
 export interface CharacterDetail {
   profile: CharacterProfile;
-	  state: {
-	    location: string;
-	    mainAreaPointId?: string | null;
-	    currentAction: string | null;
-	    currentActionLabel?: string | null;
-	    emotionValence: number;
-	    emotionArousal: number;
-	    curiosity: number;
-	    ageYears: number;
-	    ageDays: number;
-	    lifeStage: string;
-	    lifeStageLabel?: string;
-	    health: number;
-	    bodyCondition: string;
-	    bodyConditionLabel?: string;
-	    energy: number;
-		    hunger: number;
-		    stress: number;
-		    money: number;
-		    carryWeightKg: number;
-		    shortTermGoal?: string | null;
-	    isAlive: boolean;
-	    deathDay: number | null;
-	    deathTick: number | null;
-	    deathCause: string | null;
-	  };
+  state: {
+    location: string;
+    mainAreaPointId?: string | null;
+    currentAction: string | null;
+    currentActionLabel?: string | null;
+    sleepWakeTime?: string | null;
+    emotionValence: number;
+    emotionArousal: number;
+    curiosity: number;
+    ageYears: number;
+    ageDays: number;
+    lifeStage: string;
+    lifeStageLabel?: string;
+    health: number;
+    bodyCondition: string;
+    bodyConditionLabel?: string;
+    energy: number;
+    hunger: number;
+    stress: number;
+    money: number;
+    carryWeightKg: number;
+    shortTermGoal?: string | null;
+    isAlive: boolean;
+    deathDay: number | null;
+    deathTick: number | null;
+    deathCause: string | null;
+  };
   emotionLabel: string;
   relationships?: CharacterRelationship[];
 }

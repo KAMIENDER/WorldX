@@ -26,27 +26,28 @@ router.get("/", (_req, res) => {
       nickname: p.nickname,
       location: s.location,
       mainAreaPointId: s.mainAreaPointId,
-	      emotion: getEmotionLabel(s.emotionValence, s.emotionArousal),
-	      currentAction: s.currentAction,
-	      currentActionLabel,
-	      ageYears: s.ageYears,
-	      lifeStage: s.lifeStage,
-	      lifeStageLabel: getLifeStageLabel(s.lifeStage),
-	      health: s.health,
-	      bodyCondition: s.bodyCondition,
-	      bodyConditionLabel: getBodyConditionLabel(s.bodyCondition),
-	      energy: s.energy,
-		      hunger: s.hunger,
-		      stress: s.stress,
-		      money: s.money,
-		      carryWeightKg: s.carryWeightKg,
-		      shortTermGoal: s.shortTermGoal,
-	      isAlive: s.isAlive,
-	      anchor: p.anchor || null,
-	      socialClass: p.socialClass,
-	      occupation: p.occupation,
-	    };
-	  });
+      emotion: getEmotionLabel(s.emotionValence, s.emotionArousal),
+      currentAction: s.currentAction,
+      currentActionLabel,
+      sleepWakeTime: s.sleepWakeTime,
+      ageYears: s.ageYears,
+      lifeStage: s.lifeStage,
+      lifeStageLabel: getLifeStageLabel(s.lifeStage),
+      health: s.health,
+      bodyCondition: s.bodyCondition,
+      bodyConditionLabel: getBodyConditionLabel(s.bodyCondition),
+      energy: s.energy,
+      hunger: s.hunger,
+      stress: s.stress,
+      money: s.money,
+      carryWeightKg: s.carryWeightKg,
+      shortTermGoal: s.shortTermGoal,
+      isAlive: s.isAlive,
+      anchor: p.anchor || null,
+      socialClass: p.socialClass,
+      occupation: p.occupation,
+    };
+  });
   res.json(result);
 });
 
@@ -64,12 +65,12 @@ router.get("/:id", (req, res) => {
     });
     res.json({
       profile,
-	      state: {
-	        ...state,
-	        currentActionLabel,
-	        lifeStageLabel: getLifeStageLabel(state.lifeStage),
-	        bodyConditionLabel: getBodyConditionLabel(state.bodyCondition),
-	      },
+      state: {
+        ...state,
+        currentActionLabel,
+        lifeStageLabel: getLifeStageLabel(state.lifeStage),
+        bodyConditionLabel: getBodyConditionLabel(state.bodyCondition),
+      },
       emotionLabel: getEmotionLabel(state.emotionValence, state.emotionArousal),
       relationships: appContext.characterManager.getRelationships(req.params.id),
     });

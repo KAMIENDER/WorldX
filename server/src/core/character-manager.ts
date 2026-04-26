@@ -11,6 +11,7 @@ import type {
 import type { WorldManager } from "./world-manager.js";
 import { loadCharacterProfiles } from "../utils/config-loader.js";
 import { generateId } from "../utils/id-generator.js";
+import { absoluteTick, tickOffsetForClockTime } from "../utils/time-helpers.js";
 import * as charStateStore from "../store/character-state-store.js";
 import * as relationshipStore from "../store/character-relationship-store.js";
 import { MemoryManager } from "./memory-manager.js";
@@ -157,39 +158,56 @@ export class CharacterManager {
   }
 
   resetStatesForNewScene(): void {
-    const occupiedPointIds = new Set<string>();
-    const currentTime = this.worldManager.getCurrentTime();
-    const spawnSeedSalt = `scene:${currentTime.day}:${Date.now().toString(36)}`;
+    this.resetStatesForNewDay(this.worldManager.getCurrentTime().day);
+  }
+
+  resetStatesForNewDay(day: number): SimulationEvent[] {
+    const events: SimulationEvent[] = [];
+    const sceneConfig = this.worldManager.getSceneConfig();
+    const dayStartTime: GameTime = { day, tick: 0 };
+    const dayStartAbsTick = absoluteTick(dayStartTime);
 
     for (const profile of this.getAliveProfiles()) {
-      const initialState = buildInitialCharacterState(
-        profile,
-        this.worldManager,
-        occupiedPointIds,
-        spawnSeedSalt,
-      );
-      if (initialState.mainAreaPointId) {
-        occupiedPointIds.add(initialState.mainAreaPointId);
+      const state = this.getState(profile.id);
+      const wakeTime = state.currentAction === "sleep" ? state.sleepWakeTime : null;
+      if (wakeTime) {
+        const wakeTick = tickOffsetForClockTime(wakeTime, sceneConfig);
+        const sleepRecovery = getSleepRecoveryPatch(state);
+        if (wakeTick <= 0) {
+          charStateStore.updateCharacterState(profile.id, {
+            currentAction: null,
+            currentActionTarget: null,
+            actionStartTick: 0,
+            actionEndTick: 0,
+            sleepWakeTime: null,
+            emotionArousal: Math.max(1, state.emotionArousal - 1),
+            ...sleepRecovery,
+          });
+          events.push(buildWakeEvent(profile.id, state.location, wakeTime, dayStartTime));
+        } else {
+          charStateStore.updateCharacterState(profile.id, {
+            currentAction: "sleep",
+            currentActionTarget: null,
+            actionStartTick: dayStartAbsTick,
+            actionEndTick: dayStartAbsTick + wakeTick,
+            sleepWakeTime: wakeTime,
+            emotionArousal: Math.max(1, state.emotionArousal - 1),
+            ...sleepRecovery,
+          });
+        }
+        continue;
       }
 
       charStateStore.updateCharacterState(profile.id, {
-        location: initialState.location,
-        mainAreaPointId: initialState.mainAreaPointId,
-        currentAction: initialState.currentAction,
-        currentActionTarget: initialState.currentActionTarget,
-        actionStartTick: initialState.actionStartTick,
-        actionEndTick: initialState.actionEndTick,
-        emotionValence: initialState.emotionValence,
-        emotionArousal: initialState.emotionArousal,
-        curiosity: initialState.curiosity,
-        energy: initialState.energy,
-        hunger: initialState.hunger,
-        stress: initialState.stress,
-        money: initialState.money,
-        shortTermGoal: initialState.shortTermGoal,
-        dailyPlan: initialState.dailyPlan,
+        currentAction: null,
+        currentActionTarget: null,
+        actionStartTick: 0,
+        actionEndTick: 0,
+        sleepWakeTime: null,
       });
     }
+
+    return events;
   }
 
   updateState(charId: string, patch: Partial<CharacterState>): void {
@@ -237,6 +255,10 @@ export class CharacterManager {
   tickPassiveUpdate(charId: string, currentTime: GameTime): SimulationEvent[] {
     const state = this.getState(charId);
     if (!state.isAlive) return [];
+    if (state.currentAction === "sleep") {
+      this.tickSleepUpdate(charId, state);
+      return [];
+    }
 
     const profile = this.getProfile(charId);
 
@@ -254,6 +276,15 @@ export class CharacterManager {
 
     charStateStore.updateCharacterState(charId, fullPatch);
     return [];
+  }
+
+  private tickSleepUpdate(charId: string, state: CharacterState): void {
+    charStateStore.updateCharacterState(charId, {
+      energy: clampRuntimeStat(state.energy + 1.2),
+      hunger: clampRuntimeStat(state.hunger + 0.4),
+      stress: clampRuntimeStat(state.stress - 0.6),
+      emotionArousal: clampRuntimeStat(state.emotionArousal - 0.3, 1, 10),
+    });
   }
 
   advanceLifeAtEndOfDay(gameTime: GameTime): SimulationEvent[] {
@@ -468,6 +499,7 @@ function buildInitialCharacterState(
     currentActionTarget: null,
     actionStartTick: 0,
     actionEndTick: 0,
+    sleepWakeTime: null,
     emotionValence: 1,
     emotionArousal: clampStat(3 + profile.extraversionLevel * 2),
     curiosity: clampStat(64 + profile.intuitionLevel * 20),
@@ -479,6 +511,41 @@ function buildInitialCharacterState(
 
 function clampStat(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function clampRuntimeStat(value: number, min = 0, max = 100): number {
+  const clamped = Math.max(min, Math.min(max, value));
+  return Math.round(clamped * 10) / 10;
+}
+
+function getSleepRecoveryPatch(state: CharacterState): Partial<CharacterState> {
+  return {
+    energy: clampStat(state.energy + 28),
+    hunger: clampStat(state.hunger + 10),
+    stress: clampStat(state.stress - 12),
+  };
+}
+
+function buildWakeEvent(
+  charId: string,
+  location: string,
+  wakeTime: string,
+  gameTime: GameTime,
+): SimulationEvent {
+  return {
+    id: generateId(),
+    gameDay: gameTime.day,
+    gameTick: gameTime.tick,
+    type: "action_end",
+    actorId: charId,
+    location,
+    data: {
+      action: "sleep",
+      actionName: "醒来",
+      wakeTime,
+    },
+    tags: ["sleep", "wake"],
+  };
 }
 
 function buildInitialNeedsState(profile: CharacterProfile): Pick<

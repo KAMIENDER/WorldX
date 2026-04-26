@@ -14,7 +14,12 @@ import type {
   SceneConfig,
 } from "../types/index.js";
 import { loadWorldConfig, loadSceneConfig, setWorldDir, getWorldDir } from "../utils/config-loader.js";
-import { setSceneConfig, isSceneComplete, getTicksPerScene } from "../utils/time-helpers.js";
+import {
+  setSceneConfig,
+  isSceneComplete,
+  getTicksPerScene,
+  normalizeClockTime,
+} from "../utils/time-helpers.js";
 import * as worldState from "../store/world-state-store.js";
 import * as snapshotStore from "../store/snapshot-store.js";
 import type { SnapshotMeta } from "../store/snapshot-store.js";
@@ -31,6 +36,7 @@ const MAIN_AREA_SPAWN_INTERIOR_POOL_RATIO = 0.5;
 const DEFAULT_METERS_PER_TILE = 1;
 const DEFAULT_WALK_SPEED_METERS_PER_MINUTE = 65;
 const DEFAULT_MIN_MOVE_MINUTES = 1;
+const CURRENT_DAY_START_TIME_KEY = "current_day_start_time";
 
 export interface MainAreaPathDistance {
   pointIds: string[];
@@ -93,6 +99,7 @@ export class WorldManager {
     this.sceneConfig = loadSceneConfig();
 
     worldState.initWorldState(this.locationConfigs);
+    this.ensureCurrentDayStartTime();
     const restoredTime = this.restorePersistedTime();
     this.syncSceneClock(restoredTime.day);
   }
@@ -118,7 +125,7 @@ export class WorldManager {
   }
 
   getSceneConfig(): SceneConfig {
-    return this.sceneConfig;
+    return this.getRuntimeSceneConfig();
   }
 
   applySceneConfigOverride(override: Partial<SceneConfig>): void {
@@ -136,15 +143,7 @@ export class WorldManager {
   advanceTick(): TickAdvanceResult {
     const previousTime = this.getCurrentTime();
     const { day, tick } = previousTime;
-    const cycleTicks = getTicksPerScene({
-      sceneType: this.sceneConfig.sceneType,
-      startTime: this.sceneConfig.startTime,
-      tickDurationMinutes: this.sceneConfig.tickDurationMinutes,
-      maxTicks: this.sceneConfig.maxTicks,
-      sceneDay: day,
-      displayFormat: this.sceneConfig.displayFormat,
-      multiDay: this.sceneConfig.multiDay,
-    });
+    const cycleTicks = getTicksPerScene(this.getRuntimeSceneConfig(day));
 
     let newTick: number;
     let newDay: number;
@@ -171,21 +170,27 @@ export class WorldManager {
 
   isSceneComplete(): boolean {
     const currentTime = this.getCurrentTime();
-    return isSceneComplete(currentTime.tick, {
-      sceneType: this.sceneConfig.sceneType,
-      startTime: this.sceneConfig.startTime,
-      tickDurationMinutes: this.sceneConfig.tickDurationMinutes,
-      maxTicks: this.sceneConfig.maxTicks,
-      sceneDay: currentTime.day,
-      displayFormat: this.sceneConfig.displayFormat,
-      multiDay: this.sceneConfig.multiDay,
-    });
+    return isSceneComplete(currentTime.tick, this.getRuntimeSceneConfig(currentTime.day));
   }
 
   setTime(time: GameTime): void {
     worldState.setGlobalState("current_day", String(time.day));
     worldState.setGlobalState("current_tick", String(time.tick));
     this.syncSceneClock(time.day);
+  }
+
+  startNewDay(day: number, startTime: string): void {
+    worldState.setGlobalState("current_day", String(Math.max(1, Math.floor(day))));
+    worldState.setGlobalState("current_tick", "0");
+    worldState.setGlobalState(
+      CURRENT_DAY_START_TIME_KEY,
+      normalizeClockTime(startTime, this.sceneConfig.startTime),
+    );
+    this.syncSceneClock(day);
+  }
+
+  getCurrentDayStartTime(): string {
+    return this.getRuntimeSceneConfig().startTime;
   }
 
   getLocation(locationId: string): LocationConfig | undefined {
@@ -367,15 +372,7 @@ export class WorldManager {
   }
 
   private syncSceneClock(sceneDay: number): void {
-    setSceneConfig({
-      sceneType: this.sceneConfig.sceneType,
-      startTime: this.sceneConfig.startTime,
-      tickDurationMinutes: this.sceneConfig.tickDurationMinutes,
-      maxTicks: this.sceneConfig.maxTicks,
-      sceneDay,
-      displayFormat: this.sceneConfig.displayFormat,
-      multiDay: this.sceneConfig.multiDay,
-    });
+    setSceneConfig(this.getRuntimeSceneConfig(sceneDay));
   }
 
   private restorePersistedTime(): GameTime {
@@ -385,20 +382,35 @@ export class WorldManager {
     const day = Number.isFinite(rawDay) && rawDay > 0 ? rawDay : 1;
     let tick = Number.isFinite(rawTick) && rawTick >= 0 ? rawTick : 0;
 
-    const cycleTicks = getTicksPerScene({
-      sceneType: this.sceneConfig.sceneType,
-      startTime: this.sceneConfig.startTime,
-      tickDurationMinutes: this.sceneConfig.tickDurationMinutes,
-      maxTicks: this.sceneConfig.maxTicks,
-      sceneDay: day,
-      displayFormat: this.sceneConfig.displayFormat,
-      multiDay: this.sceneConfig.multiDay,
-    });
+    const cycleTicks = getTicksPerScene(this.getRuntimeSceneConfig(day));
     tick = Math.min(tick, Math.max(0, cycleTicks - 1));
 
     worldState.setGlobalState("current_day", String(day));
     worldState.setGlobalState("current_tick", String(tick));
     return { day, tick };
+  }
+
+  private ensureCurrentDayStartTime(): void {
+    const existing = worldState.getGlobalState(CURRENT_DAY_START_TIME_KEY);
+    worldState.setGlobalState(
+      CURRENT_DAY_START_TIME_KEY,
+      normalizeClockTime(existing ?? this.sceneConfig.startTime, this.sceneConfig.startTime),
+    );
+  }
+
+  private getRuntimeSceneConfig(sceneDay?: number): SceneConfig {
+    const startTime = normalizeClockTime(
+      worldState.getGlobalState(CURRENT_DAY_START_TIME_KEY) ?? this.sceneConfig.startTime,
+      this.sceneConfig.startTime,
+    );
+    return {
+      ...this.sceneConfig,
+      startTime,
+      sceneDay,
+      multiDay: {
+        ...this.sceneConfig.multiDay,
+      },
+    } as SceneConfig;
   }
 
   private getPreferredSpawnMainAreaPoints(): MainAreaPointConfig[] {

@@ -9,7 +9,7 @@ import { tickToSceneTimeWithPeriod } from "../utils/time-helpers.js";
 
 const DEFAULT_MAX_EVENTS = 12;
 const DEFAULT_TIMEOUT_MS = 30_000;
-const RESERVED_GLOBAL_KEYS = new Set(["current_day", "current_tick"]);
+const RESERVED_GLOBAL_KEYS = new Set(["current_day", "current_tick", "current_day_start_time"]);
 const RESERVED_GLOBAL_PREFIXES = ["dialogue_session:"];
 
 export interface RuntimeObjectInfo {

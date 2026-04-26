@@ -112,8 +112,7 @@ export function tickToSceneTime(
   config?: SceneTimeConfig,
 ): string {
   const c = config || currentSceneConfig;
-  const [startH, startM] = getEffectiveStartTime(c).split(":").map(Number);
-  const totalMinutes = startH * 60 + startM + tick * c.tickDurationMinutes;
+  const totalMinutes = getClockMinutesAtTick(tick, c);
   const hours = Math.floor(totalMinutes / 60) % 24;
   const minutes = totalMinutes % 60;
 
@@ -180,8 +179,7 @@ export function getTimePeriodLabel(
   config?: SceneTimeConfig,
 ): string {
   const c = config || currentSceneConfig;
-  const [startH, startM] = getEffectiveStartTime(c).split(":").map(Number);
-  const totalMinutes = startH * 60 + startM + tick * c.tickDurationMinutes;
+  const totalMinutes = getClockMinutesAtTick(tick, c);
   const hours = Math.floor(totalMinutes / 60) % 24;
 
   if (hours >= 5 && hours < 9) return "清晨";
@@ -207,6 +205,64 @@ export function buildWorldTimeInfo(
     timeString: tickToSceneTime(gameTime.tick, config),
     period: getTimePeriodLabel(gameTime.tick, config),
   };
+}
+
+export function normalizeClockTime(value: unknown, fallback = "07:00"): string {
+  const parsed = typeof value === "string" ? parseClockTimeToMinutes(value) : null;
+  if (parsed != null) return clockTimeForMinutes(parsed);
+  const fallbackParsed = parseClockTimeToMinutes(fallback);
+  return clockTimeForMinutes(fallbackParsed ?? 7 * 60);
+}
+
+export function parseClockTimeToMinutes(value: string): number | null {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
+export function clockTimeForMinutes(minutes: number): string {
+  const normalized = ((Math.floor(minutes) % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(normalized / 60);
+  const m = normalized % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function getClockMinutesAtTick(
+  tick: number,
+  config?: SceneTimeConfig,
+): number {
+  const c = config || currentSceneConfig;
+  const startMinutes = parseTimeToMinutes(getEffectiveStartTime(c));
+  return (startMinutes + tick * c.tickDurationMinutes) % (24 * 60);
+}
+
+export function minutesUntilClockTime(
+  targetTime: string,
+  fromTick: number,
+  config?: SceneTimeConfig,
+): number {
+  const c = config || currentSceneConfig;
+  const target = parseClockTimeToMinutes(targetTime);
+  if (target == null) return 8 * 60;
+  const from = getClockMinutesAtTick(fromTick, c);
+  const diff = (target - from + 24 * 60) % (24 * 60);
+  return diff === 0 ? 24 * 60 : diff;
+}
+
+export function tickOffsetForClockTime(
+  targetTime: string,
+  config?: SceneTimeConfig,
+): number {
+  const c = config || currentSceneConfig;
+  const target = parseClockTimeToMinutes(targetTime);
+  if (target == null) return 0;
+  const start = parseTimeToMinutes(getEffectiveStartTime(c));
+  const diff = (target - start + 24 * 60) % (24 * 60);
+  return Math.max(0, Math.ceil(diff / c.tickDurationMinutes));
 }
 
 export function relativeTimeLabel(
@@ -242,4 +298,8 @@ function getEffectiveStartTime(config: SceneTimeConfig): string {
     return config.multiDay.nextDayStartTime || config.startTime;
   }
   return config.startTime;
+}
+
+function parseTimeToMinutes(value: string): number {
+  return parseClockTimeToMinutes(value) ?? 0;
 }
