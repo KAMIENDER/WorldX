@@ -15,6 +15,7 @@ import { WorldIntroBanner } from "./panels/WorldIntroBanner";
 import { Timeline } from "./pages/Timeline";
 import { CreateWorldPage } from "./pages/CreateWorldPage";
 import { CreateWorldBackground } from "./pages/CreateWorldBackground";
+import { StartScreen, START_SCREEN_SKIP_ONCE_KEY } from "./pages/StartScreen";
 import type { SimulationEvent, DialogueEventData, WorldTimeInfo } from "../types/api";
 import { apiClient } from "./services/api-client";
 import type { GeneratedWorldSummary, TickProgressInfo, WorldInfo } from "./services/api-client";
@@ -102,6 +103,14 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
     typeof document === "undefined" ? null : document.getElementById("background-root");
   const isDevMode = new URLSearchParams(location.search).get("dev") === "1";
   const isCreateRoute = location.pathname === "/create";
+  const isOverlayRoute =
+    location.pathname === "/timeline";
+  const [startScreenDismissed, setStartScreenDismissed] = useState(() => {
+    if (typeof sessionStorage === "undefined") return false;
+    const shouldSkip = sessionStorage.getItem(START_SCREEN_SKIP_ONCE_KEY) === "1";
+    if (shouldSkip) sessionStorage.removeItem(START_SCREEN_SKIP_ONCE_KEY);
+    return shouldSkip;
+  });
   const [worldsList, setWorldsList] = useState<GeneratedWorldSummary[] | null>(null);
   const [hasUserWorlds, setHasUserWorlds] = useState(false);
   const [gameTime, setGameTime] = useState<WorldTimeInfo>({
@@ -136,9 +145,18 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
     () => (typeof window === "undefined" ? 1200 : window.innerWidth),
   );
   const playbackProgressClearTimerRef = useRef<number | null>(null);
-  const isOverlayRoute =
-    location.pathname === "/timeline";
-  const hideMainChrome = isOverlayRoute || isCreateRoute;
+  const showStartScreen =
+    !isCreateRoute &&
+    !isOverlayRoute &&
+    !startScreenDismissed &&
+    worldsList !== null &&
+    worldsList.length > 0;
+  const waitingForStartScreenDecision =
+    !isCreateRoute &&
+    !isOverlayRoute &&
+    !startScreenDismissed &&
+    worldsList === null;
+  const hideMainChrome = isOverlayRoute || isCreateRoute || showStartScreen || waitingForStartScreenDecision;
   const ticksPerScene = worldInfo?.sceneRuntime.cycleTicks ?? 48;
   const showDayTransition = worldInfo?.sceneRuntime.transitionEnabled ?? false;
   const endTransitionTitle =
@@ -459,6 +477,10 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
     eventBus.emit("set_auto_play", !autoPlayEnabled);
   }, [autoPlayEnabled, eventBus]);
 
+  const handleEnterFromStartScreen = useCallback(() => {
+    setStartScreenDismissed(true);
+  }, []);
+
   const handleNewTimeline = useCallback(async () => {
     const confirmed = window.confirm(t("app.confirmNewTimeline"));
     if (!confirmed) return;
@@ -518,6 +540,14 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
       {backgroundRoot &&
         createPortal(<CreateWorldBackground intensity="calm" />, backgroundRoot)}
       <div style={{ width: "100%", height: "100%", pointerEvents: "none" }}>
+        {showStartScreen && (
+          <StartScreen
+            worldInfo={worldInfo}
+            gameTime={gameTime}
+            onEnterCurrent={handleEnterFromStartScreen}
+            onCreateWorld={() => navigate("/create")}
+          />
+        )}
         {!hideMainChrome && (
         <>
           <TopBar
