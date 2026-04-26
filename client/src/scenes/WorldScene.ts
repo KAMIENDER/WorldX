@@ -134,6 +134,7 @@ export class WorldScene extends Phaser.Scene {
     this.eventBus.on("set_cycle_ticks", (cycleTicks: number) => {
       this.playbackController.setCycleTicks(cycleTicks);
     });
+    this.eventBus.on("external_sim_event", this.handleSimEvent, this);
     this.eventBus.on("start_replay", (timelineId: string) => {
       void this.playbackController.startReplay(timelineId);
     });
@@ -197,6 +198,7 @@ export class WorldScene extends Phaser.Scene {
       this.eventBus.off("scene_sync_characters", onSceneSyncCharacters);
       this.eventBus.off("tick_playback_started", onTickPlaybackStarted);
       this.eventBus.off("tick_playback_events_flushed", onTickPlaybackEventsFlushed);
+      this.eventBus.off("external_sim_event", this.handleSimEvent, this);
     });
 
     this.initAsync();

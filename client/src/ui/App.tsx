@@ -10,6 +10,7 @@ import { SidePanel } from "./panels/SidePanel";
 import { MapControls } from "./panels/MapControls";
 import { DialoguePanel } from "./panels/DialoguePanel";
 import { RuntimeStatePanel } from "./panels/RuntimeStatePanel";
+import { PossessionPanel } from "./panels/PossessionPanel";
 import { SceneTransition } from "./panels/SceneTransition";
 import { WorldIntroBanner } from "./panels/WorldIntroBanner";
 import { Timeline } from "./pages/Timeline";
@@ -141,6 +142,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
   const [showMainAreaPointsOverlay, setShowMainAreaPointsOverlay] = useState(false);
   const [showInteractiveObjectsOverlay, setShowInteractiveObjectsOverlay] = useState(false);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [possessionOpen, setPossessionOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(
     () => (typeof window === "undefined" ? 1200 : window.innerWidth),
   );
@@ -573,6 +575,7 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
             tickProgress={tickProgress}
             playbackProgress={playbackProgress}
             onHeightChange={setTopBarHeight}
+            onOpenPossession={() => setPossessionOpen(true)}
           />
           {worldInfo && (worldInfo.originalPrompt?.trim() || worldInfo.worldDescription?.trim()) && (
             <WorldIntroBanner
@@ -612,6 +615,13 @@ function AppContent({ eventBus }: { eventBus: Phaser.Events.EventEmitter }) {
             rightOffset={statePanelRightOffset}
             refreshKey={`${gameTime.day}:${gameTime.tick}:${runtimeStateRefreshNonce}:${events[0]?.id ?? ""}:${worldInfo?.currentTimelineId ?? ""}`}
           />
+          {possessionOpen && (
+            <PossessionPanel
+              initialCharacterId={selectedCharId ?? followedCharId}
+              eventBus={eventBus}
+              onClose={() => setPossessionOpen(false)}
+            />
+          )}
           <SceneTransition
             day={gameTime.day + (transitionPhase === "ending" ? 1 : 0)}
             phase={transitionPhase}

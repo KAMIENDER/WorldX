@@ -144,6 +144,85 @@ export interface TickProgressInfo {
   eventCount?: number;
 }
 
+export type PossessionActionType =
+  | "interact_object"
+  | "world_action"
+  | "talk_to"
+  | "move_to"
+  | "move_within_main_area"
+  | "idle"
+  | "sleep";
+
+export interface PossessionActionOption {
+  id: string;
+  category: "world" | "object" | "talk" | "move" | "rest";
+  actionType: PossessionActionType;
+  label: string;
+  targetId: string;
+  interactionId?: string;
+  disabled?: boolean;
+}
+
+export interface PossessionNearbyCharacter {
+  id: string;
+  name: string;
+  currentAction: string | null;
+  emotionLabel?: string;
+  bodyCondition?: string;
+  locationId?: string;
+  locationName?: string;
+  zone?: string;
+}
+
+export interface PossessionContext {
+  ok: boolean;
+  gameTime: GameTime;
+  actor: {
+    id: string;
+    name: string;
+    role: string;
+    occupation?: string;
+    speakingStyle?: string;
+  };
+  state: CharacterDetail["state"] & {
+    characterId: string;
+    mainAreaPointId?: string | null;
+  };
+  location: {
+    id: string;
+    name: string;
+    description: string;
+    zone?: string;
+  };
+  nearbyCharacters: PossessionNearbyCharacter[];
+  recentActions: string[];
+  recentEnvironmentChanges: string[];
+  recentDialogueContext: string[];
+  actions: PossessionActionOption[];
+}
+
+export interface PossessionChatMessage {
+  speakerId: string;
+  speakerName: string;
+  content: string;
+}
+
+export interface PossessionChatStartResponse {
+  ok: boolean;
+  sessionId: string;
+  actor: { id: string; name: string; role: string };
+  target: { id: string; name: string; role: string };
+  contextLines: string[];
+  history: PossessionChatMessage[];
+}
+
+export interface PossessionChatMessageResponse {
+  ok: boolean;
+  reply: string;
+  event: SimulationEvent;
+  history: PossessionChatMessage[];
+}
+
 export interface SimulationConfigInfo {
   prefetchTicks: number;
   maxQueuedTicks: number;
@@ -320,6 +399,44 @@ export const apiClient = {
 
   sandboxChatClose(sessionId: string): Promise<{ ok: boolean }> {
     return postJSON("/sandbox/chat/close", { sessionId });
+  },
+
+  getPossessionContext(params: {
+    characterId: string;
+    targetId?: string;
+  }): Promise<PossessionContext> {
+    const q = new URLSearchParams({ characterId: params.characterId });
+    if (params.targetId) q.set("targetId", params.targetId);
+    return fetchJSON(`/possession/context?${q.toString()}`);
+  },
+
+  possessionAction(params: {
+    characterId: string;
+    actionType: PossessionActionType;
+    targetId: string;
+    interactionId?: string;
+    wakeTime?: string;
+    reason?: string;
+  }): Promise<{ ok: boolean; events: SimulationEvent[]; state: Record<string, unknown> }> {
+    return postJSON("/possession/action", params);
+  },
+
+  possessionChatStart(params: {
+    actorId: string;
+    targetId: string;
+  }): Promise<PossessionChatStartResponse> {
+    return postJSON("/possession/chat/start", params);
+  },
+
+  possessionChatSend(params: {
+    sessionId: string;
+    message: string;
+  }): Promise<PossessionChatMessageResponse> {
+    return postJSON("/possession/chat/message", params);
+  },
+
+  possessionChatClose(sessionId: string): Promise<{ ok: boolean }> {
+    return postJSON("/possession/chat/close", { sessionId });
   },
 
   patchCharacterProfile(

@@ -17,6 +17,7 @@ import { createPublicContentRouter } from "./api/routes/content.js";
 import simulationRoutes from "./api/routes/simulation.js";
 import godRoutes from "./api/routes/god.js";
 import sandboxChatRoutes from "./api/routes/sandbox-chat.js";
+import possessionRoutes from "./api/routes/possession.js";
 import timelineRoutes from "./api/routes/timeline.js";
 import { resolveInitialWorldDir } from "./utils/world-directories.js";
 
@@ -105,6 +106,7 @@ async function main() {
   app.use("/api/simulation", requireWorld, simulationRoutes);
   app.use("/api/god", requireWorld, godRoutes);
   app.use("/api/sandbox/chat", requireWorld, sandboxChatRoutes);
+  app.use("/api/possession", requireWorld, possessionRoutes);
   app.use("/api/timelines", timelineRoutes);
 
   app.use("/assets/map", createWorldAssetHandler("map"));

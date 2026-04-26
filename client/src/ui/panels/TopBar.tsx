@@ -47,6 +47,7 @@ export function TopBar({
   tickProgress,
   playbackProgress,
   onHeightChange,
+  onOpenPossession,
 }: {
   worldInfo?: WorldInfo | null;
   gameTime: WorldTimeInfo;
@@ -70,6 +71,7 @@ export function TopBar({
   tickProgress: TickProgressInfo[];
   playbackProgress?: PlaybackProgressInfo | null;
   onHeightChange?: (height: number) => void;
+  onOpenPossession?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -598,6 +600,14 @@ export function TopBar({
             title={t("topbar.sandboxChatTitle")}
           >
             {t("topbar.sandboxChat")}
+          </button>
+          <button
+            onClick={() => { pauseWorldIfNeeded(); onOpenPossession?.(); }}
+            disabled={inReplayMode}
+            style={{ ...chipBtnStyle(false), opacity: inReplayMode ? 0.4 : 1, cursor: inReplayMode ? "not-allowed" : "pointer" }}
+            title={t("topbar.possessionTitle")}
+          >
+            {t("topbar.possession")}
           </button>
 
           {isDevMode && (
